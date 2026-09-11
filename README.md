@@ -86,7 +86,6 @@ The short version — from the **Actions** tab, run **Build and publish RecRoll*
 | `sign_pace` | `auto` / `on` / `off` — PACE Eden signing for AAX |
 | `sign_binary` | `auto` / `on` / `off` — Developer ID and Authenticode signing, and notarisation |
 | `platforms` | `both` / `windows` / `macos` |
-| `verbose_logs` | Leave off. See the security model before turning it on. |
 
 `sign_pace` and `sign_binary` are independent, so all four signing shapes are
 reachable: both signed, PACE only, binaries only, neither.

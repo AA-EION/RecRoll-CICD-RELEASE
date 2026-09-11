@@ -81,7 +81,6 @@ Unset, the jobs use `windows-latest` and `macos-14`.
 | `sign_binary` | `on` for a real release. |
 | `platforms` | `both` |
 | `replace_existing` | `true` if you are re-cutting a tag you already published. |
-| `verbose_logs` | Off. |
 
 Setting both signing switches to `on` rather than leaving them at `auto` is the
 point of the distinction: `auto` skips signing when a secret is missing and
@@ -160,9 +159,9 @@ unredacted:
 gh workflow run build-and-release.yml --repo AA-EION/RecRoll -r <branch>
 ```
 
-Turning on `verbose_logs` here does work, and it will publish those source
-lines into a public log. It exists for the case where you have decided that is
-acceptable; it is not a debugging default.
+There is no switch here to turn redaction off. There was one, briefly, and it
+had no use the private workflow does not cover better — so it was only ever a
+way to publish source into a public log by accident.
 
 ### Failures that are not build failures
 

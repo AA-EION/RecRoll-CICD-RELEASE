@@ -85,9 +85,18 @@ that the file name and line number *do* survive — a redactor that hides
 everything is safe and useless, and would quietly be replaced by someone
 turning it off.
 
-`verbose_logs` disables redaction. It exists because there are moments when the
-maintainer decides the exposure is acceptable. It is off by default, it is
-labelled as dangerous in the workflow input, and it should not become a habit.
+There is **no input that disables redaction**. An earlier revision had one. It
+was removed on review: anyone who needs the full text can run the same commit
+through `AA-EION/RecRoll`'s own workflow, whose logs are private and complete,
+so the switch had no use its safe alternative did not cover — which left it as
+nothing but a way to publish source into a public log in a hurry.
+
+As a second line, the redactor also drops any line carrying credential-shaped
+material — a PEM header, a long base64 run, a `token:`-style URL — regardless of
+which rule would otherwise have passed it. GitHub masks exact secret values in
+logs on its own, but masking only matches the value as stored: a secret that has
+been decoded, re-encoded or split across lines is no longer an exact match, and
+this catches that case.
 
 ### 5. Build products carry more than intended
 
@@ -134,6 +143,77 @@ to add `actions/cache` to shorten a build: don't, unless you have first worked
 out exactly what ends up in the cache key's payload.
 
 ---
+
+---
+
+## Residual risks
+
+These are known, accepted, or need a decision that is not this repository's to
+make. They are listed so nobody has to rediscover them.
+
+### Signing secrets reach a job that compiles third-party code
+
+Both repositories' build jobs hold the Developer ID certificate, the PACE
+password and the Authenticode PFX while CMake fetches and compiles JUCE and
+`clap-juce-extensions`. Anything that executes during that build can read the
+job's environment.
+
+`clap-juce-extensions` is fetched at **`GIT_TAG main`** in the private
+repository's `CMakeLists.txt` — a moving branch, not a pinned commit. A
+compromise of that repository, or of any commit pushed to its default branch,
+runs in a job holding code-signing keys. **Pin it to a tag or commit SHA.**
+
+The stronger fix for both: move the signing secrets into a GitHub
+**Environment** with a required reviewer, and let ordinary branch and
+pull-request builds run unsigned. Signing then only happens on a run a human
+approved, and a malicious pull request cannot reach the keys.
+
+### Passwords appear on command lines
+
+`signtool /p`, `wraptool -p` and `wraptool --keypassword` all take the password
+as an argument, and neither tool offers an environment-variable or stdin
+alternative. Any process on the same machine can read it out of the process
+list while signing runs.
+
+On GitHub-hosted runners this is not a practical concern: the VM is
+single-tenant and destroyed after the job. **On a self-hosted runner it is** —
+do not run the signing jobs on a machine that is shared with anything else, and
+do not give that machine other tenants.
+
+The redactor withholds any line carrying such a flag, so this does not reach the
+logs; the exposure is to the machine, not to the log.
+
+### A fork's pull request runs its own copy of the guard
+
+For `pull_request`, GitHub runs the workflow file from the pull request, not
+from the base branch. A fork can therefore weaken `guard.yml` in its own PR and
+watch it pass. That proves nothing about the change — the guard is a check on
+*merged* content, and what actually protects the default branch is branch
+protection plus a maintainer reading the diff.
+
+**Enable branch protection on the default branch** with a required review and
+required status checks. Without it, a maintainer in a hurry can push source
+straight past every check in this repository.
+
+### The redacted log still names files
+
+`RingBuffer.cpp(214)` says a file by that name exists. That is structure, not
+content. Removing it would make a failed public build undiagnosable, and an
+undiagnosable check is one that gets turned off — see the note above about what
+happened to the redaction override.
+
+### Debug information is stripped, not merely unrequested
+
+MSVC writes the linker's side outputs next to the module it produces, which for
+a JUCE plug-in is *inside* the `.vst3` bundle — and that bundle is copied whole
+into the MSI. A `.pdb` is not source, but it carries every symbol name and the
+full source path of every file on the build machine.
+
+`ci/stage_windows.ps1` deletes `.pdb`, `.ilk`, `.exp`, `.lib`, `.map`, `.obj`
+and friends from the staging tree, then **asserts** that none survived and fails
+the build if any did. `installer/macos/build_installer.sh` does the same for
+`.dSYM` and object files. The assertion is the point: the deletion could be
+right today and wrong after the next JUCE upgrade changes a bundle layout.
 
 ## If something does leak
 

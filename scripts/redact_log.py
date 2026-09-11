@@ -16,12 +16,11 @@ a redacted version to stdout, line by line, so failures are still diagnosable:
     never the source excerpt the compiler prints under it
   * everything else is withheld and counted
 
-Set RECROLL_LOG_MODE=verbose to pass everything through. That deliberately
-publishes source excerpts on failure, so it is never the default and belongs
-only in a debugging run the maintainer has decided to accept.
+There is deliberately no switch to turn this off. When the full text is needed,
+the same commit is run through AA-EION/RecRoll's own workflow, whose logs are
+private and complete.
 """
 
-import os
 import re
 import sys
 
@@ -68,6 +67,24 @@ LINK_DIAG = re.compile(
     re.IGNORECASE,
 )
 
+# Credential-shaped material, checked before any rule that would let a line
+# through. GitHub masks exact secret values in logs by itself, but masking only
+# matches the value as stored: a secret that has been decoded, re-encoded, or
+# split across lines is no longer an exact match and reaches the log intact.
+# Nothing in this pipeline prints a credential on purpose; this is for the tool
+# that does it by accident.
+CREDENTIAL_SHAPED = (
+    re.compile(r"-----BEGIN [A-Z ]*(PRIVATE KEY|CERTIFICATE)"),
+    re.compile(r"(x-access-token|oauth2|[A-Za-z0-9_-]+):[^@/\s]{8,}@"),  # credentials in a URL
+    re.compile(r"\b(gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,})"),
+    re.compile(r"[A-Za-z0-9+/]{120,}={0,2}"),   # a long base64 run: a decoded cert or key
+    re.compile(r"(?i)\b(password|passwd|secret|token|api[_-]?key|keypassword)\b\s*[:=]\s*\S"),
+    # Password-carrying command-line flags. signtool and wraptool both take the
+    # password as an argument, so any tool that echoes its own command line -
+    # or a shell that traces it - puts one in the log.
+    re.compile(r"(?i)(^|\s)(-p|/p|-P|--password|--keypassword|--pass|--keyfile-password)\s+\S"),
+)
+
 # Source excerpts clang prints beneath a diagnostic, and their caret line.
 SOURCE_ECHO = re.compile(r"^\s*(\d+\s*\|)|^\s*[\^~]+\s*$|^\s*\|\s*[\^~]")
 
@@ -84,6 +101,12 @@ def basename(path):
 def redact(line):
     """Returns the line to print, or None to withhold it."""
     stripped = line.rstrip("\r\n")
+
+    # First, and ahead of every pass-through rule: nothing credential-shaped
+    # leaves this function, whatever else the line looks like.
+    for pattern in CREDENTIAL_SHAPED:
+        if pattern.search(stripped):
+            return "[line withheld: looked like credential material]"
 
     if SOURCE_ECHO.match(stripped):
         return None
@@ -121,8 +144,6 @@ def redact(line):
 
 
 def main():
-    verbose = os.environ.get("RECROLL_LOG_MODE", "").lower() == "verbose"
-
     if len(sys.argv) > 1:
         stream = open(sys.argv[1], encoding="utf-8", errors="replace")
     else:
@@ -130,10 +151,10 @@ def main():
 
     withheld = 0
     try:
-        for line in stream:
-            if verbose:
-                sys.stdout.write(line)
-                continue
+        # readline, not `for line in stream`: iterating a pipe fills an
+        # internal read-ahead buffer, and a long build would then show nothing
+        # for minutes at a time.
+        for line in iter(stream.readline, ""):
             out = redact(line)
             if out is None:
                 withheld += 1
@@ -143,11 +164,10 @@ def main():
         if stream is not sys.stdin:
             stream.close()
 
-    if not verbose:
-        print()
-        print("--- %d line(s) withheld by scripts/redact_log.py ---" % withheld)
-        print("This repository is public; raw build output can quote private source.")
-        print("The full log is in the corresponding run in AA-EION/RecRoll.")
+    print()
+    print("--- %d line(s) withheld by scripts/redact_log.py ---" % withheld)
+    print("This repository is public; raw build output can quote private source.")
+    print("The full log is in the corresponding run in AA-EION/RecRoll.")
 
 
 if __name__ == "__main__":

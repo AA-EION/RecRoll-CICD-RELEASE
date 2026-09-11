@@ -42,12 +42,19 @@ jobs:
              88 |     const auto g = kSecretTuning * feedbackShape(x);
                 |                    ^~~~~~~~~~~~~
           C:\src\Source\dsp\Ring.cpp(88,12): error C2065: 'kSecretTuning': undeclared identifier [RecRoll.vcxproj]
+          Cloning https://x-access-token:ghp_AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH1234@github.com/AA-EION/AAX-SDK.git
+          MACOS_CERT_P12_BASE64=MIIKvQIBAzCCCncGCSqGSIb3DQEHAaCCCmgEggpkMIIKYDCCBRcGCSqGSIb3DQEHBqCCBQgwggUEAgEAMIIE/QYJKoZIhvcNAQcBMBwGCiqGSIb3DQEMAQYwDgQI
+          -----BEGIN PRIVATE KEY-----
+          [sign] wraptool sign --account eion -p Hunter2Hunter2 --wcguid ABC
+          signtool sign /fd SHA256 /f recroll-signing.pfx /p MyPfxPassword file.msi
           [sign] Using wraptool at /usr/local/bin/wraptool
+          [sign] PACE Eden signed 2 AAX bundle(s).
           SAMPLE
 
           python3 scripts/redact_log.py /tmp/sample.log > /tmp/redacted.log
           cat /tmp/redacted.log
 
+          # Private source must not survive...
           for forbidden in kSecretTuning feedbackShape "const auto g"; do
             if grep -q "$forbidden" /tmp/redacted.log; then
               echo "::error::redact_log.py let source content through: $forbidden"
@@ -55,9 +62,21 @@ jobs:
             fi
           done
 
-          # It still has to be useful: the failing file and line must survive.
+          # ...and neither may anything credential-shaped. GitHub masks exact
+          # secret values on its own, but only as stored: a secret that has
+          # been decoded, re-encoded or split is no longer an exact match.
+          for forbidden in ghp_AAAABBBB MIIKvQIBAzCCCnc "BEGIN PRIVATE KEY" Hunter2Hunter2 MyPfxPassword; do
+            if grep -q "$forbidden" /tmp/redacted.log; then
+              echo "::error::redact_log.py let credential material through: $forbidden"
+              exit 1
+            fi
+          done
+
+          # It still has to be useful: a redactor that hides everything is safe
+          # and useless, and gets switched off by the next person to need it.
           grep -q "Ring.cpp" /tmp/redacted.log || { echo "::error::redactor dropped the file name"; exit 1; }
           grep -q "88" /tmp/redacted.log || { echo "::error::redactor dropped the line number"; exit 1; }
+          grep -q "PACE Eden signed 2 AAX" /tmp/redacted.log || { echo "::error::redactor dropped a status line"; exit 1; }
           echo "Redactor self-test passed."
 
       - name: Check the payload gate rejects an unexpected file

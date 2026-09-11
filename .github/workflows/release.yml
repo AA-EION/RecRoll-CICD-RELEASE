@@ -14,6 +14,9 @@ name: Build and publish RecRoll
 #      artefact is uploaded.
 #   3. Logs. Build output goes through scripts/redact_log.py, because a
 #      compiler quotes the source line it choked on and these logs are public.
+#      There is deliberately no way to turn that off from here: when the full
+#      text is needed, the same commit is run through AA-EION/RecRoll's own
+#      workflow, whose logs are private and complete.
 #   4. Payload. scripts/collect_public_artifacts.sh allowlists what leaves a
 #      build job, and scripts/verify_public_payload.sh checks the whole set
 #      again before anything is attached to a release.
@@ -56,12 +59,6 @@ on:
         type: boolean
         required: false
         default: true
-      verbose_logs:
-        description: "DANGER: publish raw build logs. A failing compile then quotes private source into this public log."
-        type: boolean
-        required: false
-        default: false
-
   # Lets AA-EION/RecRoll kick off a public release from its own workflow.
   # Sending one needs a token with write access here, so this is no weaker a
   # gate than workflow_dispatch.
@@ -78,7 +75,6 @@ env:
   RECROLL_SIGN_PACE: ${{ inputs.sign_pace || github.event.client_payload.sign_pace || 'auto' }}
   RECROLL_SIGN_BINARY: ${{ inputs.sign_binary || github.event.client_payload.sign_binary || 'auto' }}
   PLATFORMS: ${{ inputs.platforms || github.event.client_payload.platforms || 'both' }}
-  RECROLL_LOG_MODE: ${{ (inputs.verbose_logs && 'verbose') || 'strict' }}
 
 jobs:
   guard:
@@ -141,11 +137,18 @@ jobs:
         shell: pwsh
         timeout-minutes: 80
         run: |
+          # Continue, not Stop: with 2>&1 on a native command, PowerShell turns
+          # the child's stderr into error records, and the default Stop would
+          # abort this step on the first warning the build prints - before the
+          # redacted output had been written anywhere.
+          $ErrorActionPreference = "Continue"
+
           # The build runs in a child process that records its own exit status,
           # because a PowerShell pipeline reports the status of the last command
           # in it - here the redactor - and would swallow a build failure.
           Remove-Item build-exit.txt -ErrorAction SilentlyContinue
           & pwsh -NoProfile -File scripts/run_private_build.ps1 -Script src/ci/build_windows.ps1 2>&1 |
+            ForEach-Object { $_.ToString() } |
             python scripts/redact_log.py
 
           if (-not (Test-Path build-exit.txt)) {
@@ -310,12 +313,27 @@ jobs:
             echo "No existing release named $TAG."
           fi
 
+      # `gh`, not a third-party action. This is the only step that holds
+      # contents: write, and it attaches the binaries a user will download and
+      # trust - so nothing outside GitHub's own tooling runs in it.
       - name: Create the release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: RecRoll ${{ env.RELEASE_TAG }}
-          files: release-files/*
-          body_path: release-notes.md
-          draft: false
-          prerelease: false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG exists; updating it in place."
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release-files/*
+          else
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "RecRoll $TAG" \
+              --notes-file release-notes.md \
+              release-files/*
+          fi
+
+          echo "Published:"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | "  \(.name)  \(.size) bytes"'
