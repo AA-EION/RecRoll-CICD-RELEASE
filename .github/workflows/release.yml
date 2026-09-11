@@ -151,15 +151,20 @@ jobs:
           # The build runs in a child process that records its own exit status,
           # because a PowerShell pipeline reports the status of the last command
           # in it - here the redactor - and would swallow a build failure.
-          Remove-Item build-exit.txt -ErrorAction SilentlyContinue
-          & pwsh -NoProfile -File scripts/run_private_build.ps1 -Script src/ci/build_windows.ps1 2>&1 |
+          # Absolute, because the build script changes the working directory
+          # and a relative path would be written somewhere neither of us looks.
+          $status = Join-Path $PWD "build-exit.txt"
+          Remove-Item $status -ErrorAction SilentlyContinue
+
+          & pwsh -NoProfile -File scripts/run_private_build.ps1 `
+              -Script src/ci/build_windows.ps1 -StatusFile $status 2>&1 |
             ForEach-Object { $_.ToString() } |
             python scripts/redact_log.py
 
-          if (-not (Test-Path build-exit.txt)) {
+          if (-not (Test-Path $status)) {
             throw "The build wrapper did not record a status; treating this as a failure."
           }
-          $code = [int](Get-Content build-exit.txt)
+          $code = [int](Get-Content $status)
           if ($code -ne 0) {
             throw "The RecRoll build failed. Full output is in the AA-EION/RecRoll run for this commit."
           }
@@ -277,22 +282,51 @@ jobs:
         run: ./scripts/verify_public_payload.sh release-files
 
       - name: Compose release notes
+        id: notes
         env:
           TAG: ${{ env.RELEASE_TAG }}
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          MACOS_RESULT: ${{ needs.macos.result }}
         run: |
+          # The table is built from the files that actually arrived, not from
+          # what was asked for. A run where one platform failed still publishes
+          # the other - that is deliberate - but it must not hand a reader a row
+          # for a download that is not there.
+          HAVE_WINDOWS=no; HAVE_MACOS=no
+          ls release-files/*.msi >/dev/null 2>&1 && HAVE_WINDOWS=yes
+          ls release-files/*.dmg >/dev/null 2>&1 && HAVE_MACOS=yes
+
+          INCOMPLETE=no
+          [ "${WINDOWS_RESULT}" = "failure" ] && INCOMPLETE=yes
+          [ "${MACOS_RESULT}" = "failure" ] && INCOMPLETE=yes
+          echo "incomplete=${INCOMPLETE}" >> "$GITHUB_OUTPUT"
+
           {
             echo "## RecRoll ${TAG}"
             echo
+            if [ "${INCOMPLETE}" = "yes" ]; then
+              echo "> [!WARNING]"
+              echo "> **This release is incomplete.** One of the platform builds failed, so"
+              echo "> not every installer below was produced."
+              echo "> Windows: \`${WINDOWS_RESULT}\` · macOS: \`${MACOS_RESULT}\`"
+              echo
+            fi
             echo "| Platform | Download | Installs |"
             echo "|---|---|---|"
-            echo "| Windows 10/11 (x64) | \`RecRoll-*-Windows-x64.msi\` | VST3, CLAP, AAX, standalone |"
-            echo "| Windows on ARM | \`RecRoll-*-Windows-arm64.msi\` | VST3, CLAP, standalone |"
-            echo "| macOS 11+ (Universal) | \`RecRoll-macOS-Universal.dmg\` | VST3, AU, CLAP, AAX, standalone |"
+            if [ "${HAVE_WINDOWS}" = "yes" ]; then
+              echo "| Windows 10/11 (x64) | \`RecRoll-*-Windows-x64.msi\` | VST3, CLAP, AAX, standalone |"
+              echo "| Windows on ARM | \`RecRoll-*-Windows-arm64.msi\` | VST3, CLAP, standalone |"
+            fi
+            if [ "${HAVE_MACOS}" = "yes" ]; then
+              echo "| macOS 11+ (Universal) | \`RecRoll-macOS-Universal.dmg\` | VST3, AU, CLAP, AAX, standalone |"
+            fi
             echo
-            echo "The DMG opens onto a branded installer window: double-click **RecRoll Installer.pkg**"
-            echo "and follow the prompts. **Read Me First** explains where each format lands, and"
-            echo "**Uninstall RecRoll** removes everything again."
-            echo
+            if [ "${HAVE_MACOS}" = "yes" ]; then
+              echo "The DMG opens onto a branded installer window: double-click **RecRoll Installer.pkg**"
+              echo "and follow the prompts. **Read Me First** explains where each format lands, and"
+              echo "**Uninstall RecRoll** removes everything again."
+              echo
+            fi
             echo "### Signing"
             echo
             echo "\`\`\`"
@@ -309,6 +343,7 @@ jobs:
         id: kind
         env:
           REQUESTED: ${{ inputs.prerelease || github.event.client_payload.prerelease || 'false' }}
+          INCOMPLETE: ${{ steps.notes.outputs.incomplete }}
         run: |
           # An unsigned build must never sit at the top of the releases page
           # looking like the one to download. Gatekeeper and SmartScreen will
@@ -324,6 +359,9 @@ jobs:
           if [ "${REQUESTED}" = "true" ]; then
             echo "flag=--prerelease" >> "$GITHUB_OUTPUT"
             echo "Marked as a pre-release: requested."
+          elif [ "${INCOMPLETE}" = "yes" ]; then
+            echo "flag=--prerelease" >> "$GITHUB_OUTPUT"
+            echo "Marked as a pre-release: a platform build failed, so this release is incomplete."
           elif [ "${SIGNED}" = "no" ]; then
             echo "flag=--prerelease" >> "$GITHUB_OUTPUT"
             echo "Marked as a pre-release: nothing in this build was signed."

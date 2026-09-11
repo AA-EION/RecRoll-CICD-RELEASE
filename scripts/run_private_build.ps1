@@ -14,11 +14,26 @@
 
 .PARAMETER Script
     Path to the build script to run, e.g. src/ci/build_windows.ps1.
+
+.PARAMETER StatusFile
+    Where to record the exit status. Defaults to build-exit.txt in the working
+    directory as it stands when this script starts.
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][string]$Script
+    [Parameter(Mandatory = $true)][string]$Script,
+    [string]$StatusFile
 )
+
+# Both paths are resolved to absolute form BEFORE the build runs. The build
+# script calls Set-Location to the private source root, which changes this
+# session's working directory too - so a relative status path would be written
+# inside src/, where the workflow does not look for it and where the source
+# cleanup then deletes it. That turned a fully successful 21-minute Windows
+# build into a reported failure.
+if (-not $StatusFile) { $StatusFile = Join-Path (Get-Location).Path "build-exit.txt" }
+$StatusFile = [System.IO.Path]::GetFullPath($StatusFile)
+$Script = (Resolve-Path -LiteralPath $Script).Path
 
 # Continue, not Stop: a failure has to be recorded, not thrown away by this
 # wrapper terminating before it writes the file.
@@ -37,5 +52,5 @@ catch {
     $exitCode = 1
 }
 
-Set-Content -Path "build-exit.txt" -Value $exitCode
-Write-Host "[!] build exit status: $exitCode"
+Set-Content -Path $StatusFile -Value $exitCode
+Write-Host "[!] build exit status: $exitCode (recorded in $StatusFile)"
