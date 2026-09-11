@@ -81,6 +81,7 @@ Unset, the jobs use `windows-latest` and `macos-14`.
 | `sign_binary` | `on` for a real release. |
 | `platforms` | `both` |
 | `replace_existing` | `true` if you are re-cutting a tag you already published. |
+| `prerelease` | `true` for a release candidate. It is forced on anyway when nothing was signed. |
 
 Setting both signing switches to `on` rather than leaving them at `auto` is the
 point of the distinction: `auto` skips signing when a secret is missing and
@@ -88,6 +89,12 @@ ships anyway, `on` fails the build. For a release you want the failure.
 
 When the run finishes, the release appears on the **Releases** page with the
 MSIs, the DMG and the signing manifests attached.
+
+An unsigned build is always published as a pre-release, whatever you set
+`prerelease` to. Gatekeeper and SmartScreen both warn on an unsigned installer,
+and someone who has to click through those warnings should have been told by
+the label on the release rather than finding out at the download. The publish
+job decides this from the signing manifest, not from the inputs.
 
 ### Dry run first
 

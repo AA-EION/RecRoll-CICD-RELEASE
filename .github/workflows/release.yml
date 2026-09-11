@@ -59,6 +59,11 @@ on:
         type: boolean
         required: false
         default: true
+      prerelease:
+        description: "Mark the release as a pre-release. Forced on anyway when nothing was signed."
+        type: boolean
+        required: false
+        default: false
   # Lets AA-EION/RecRoll kick off a public release from its own workflow.
   # Sending one needs a token with write access here, so this is no weaker a
   # gate than workflow_dispatch.
@@ -300,6 +305,33 @@ jobs:
           } > release-notes.md
           cat release-notes.md
 
+      - name: Decide whether this is a pre-release
+        id: kind
+        env:
+          REQUESTED: ${{ inputs.prerelease || github.event.client_payload.prerelease || 'false' }}
+        run: |
+          # An unsigned build must never sit at the top of the releases page
+          # looking like the one to download. Gatekeeper and SmartScreen will
+          # both warn on it, and a user who has to click through those warnings
+          # should have been told beforehand by the label on the release.
+          if grep -qE '^[[:space:]]*Binaries[[:space:]]*: (developer-id|authenticode)' \
+               release-files/SIGNING-*.txt 2>/dev/null; then
+            SIGNED=yes
+          else
+            SIGNED=no
+          fi
+
+          if [ "${REQUESTED}" = "true" ]; then
+            echo "flag=--prerelease" >> "$GITHUB_OUTPUT"
+            echo "Marked as a pre-release: requested."
+          elif [ "${SIGNED}" = "no" ]; then
+            echo "flag=--prerelease" >> "$GITHUB_OUTPUT"
+            echo "Marked as a pre-release: nothing in this build was signed."
+          else
+            echo "flag=" >> "$GITHUB_OUTPUT"
+            echo "Full release: the manifest reports signed binaries."
+          fi
+
       - name: Remove any existing release of this tag
         if: ${{ inputs.replace_existing || github.event.client_payload.replace_existing }}
         env:
@@ -321,16 +353,22 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ env.RELEASE_TAG }}
         run: |
+          PRERELEASE="${{ steps.kind.outputs.flag }}"
+
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG exists; updating it in place."
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file release-notes.md
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --notes-file release-notes.md \
+              --prerelease="$( [ -n "$PRERELEASE" ] && echo true || echo false )"
             gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release-files/*
           else
+            # shellcheck disable=SC2086 -- PRERELEASE is a single flag or empty
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
               --title "RecRoll $TAG" \
               --notes-file release-notes.md \
+              $PRERELEASE \
               release-files/*
           fi
 
