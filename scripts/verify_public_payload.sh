@@ -13,7 +13,9 @@ set -euo pipefail
 
 DIR="${1:?directory to verify}"
 
-ALLOWED='\.(msi|dmg)$|^SIGNING-(windows|macos)\.txt$'
+# Narrow on purpose. A bare \.exe$ would admit any stray binary the build tree
+# happens to leave in dist/; only the Inno installer matches this.
+ALLOWED='^RecRoll-.*-Installer\.exe$|\.(msi|dmg)$|^SIGNING-(windows|macos)\.txt$'
 
 echo "Verifying the public release payload in ${DIR}..."
 FAILED=0
@@ -39,8 +41,8 @@ fi
 if [ "${FAILED}" -ne 0 ]; then
     echo >&2
     echo "Refusing to publish: the payload contains files that are not a public" >&2
-    echo "deliverable. Only .msi, .dmg and the signing manifests may be released" >&2
-    echo "from this repository." >&2
+    echo "deliverable. Only the RecRoll installer .exe, .msi, .dmg and the signing" >&2
+    echo "manifests may be released from this repository." >&2
     exit 1
 fi
 

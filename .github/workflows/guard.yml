@@ -79,16 +79,37 @@ jobs:
           grep -q "PACE Eden signed 2 AAX" /tmp/redacted.log || { echo "::error::redactor dropped a status line"; exit 1; }
           echo "Redactor self-test passed."
 
-      - name: Check the payload gate rejects an unexpected file
+      - name: Check the payload gate accepts only the deliverables
         run: |
+          # Start clean: a leftover file from an earlier run would make the
+          # first assertion fail for a reason that has nothing to do with the
+          # allowlist.
+          rm -rf /tmp/payload
           mkdir -p /tmp/payload
-          touch /tmp/payload/RecRoll-1.1.0-Windows-x64.msi
+          for f in RecRoll-Windows-Universal-Installer.exe \
+                   RecRoll-1.1.0-Windows-x64.msi \
+                   RecRoll-1.1.0-Windows-arm64.msi \
+                   RecRoll-macOS-Universal.dmg \
+                   SIGNING-windows.txt SIGNING-macos.txt; do
+            touch "/tmp/payload/$f"
+          done
           ./scripts/verify_public_payload.sh /tmp/payload
 
-          # Anything that is not a deliverable must be refused, whatever it is.
-          touch /tmp/payload/RecRoll-Windows-x64-Portable.zip
-          if ./scripts/verify_public_payload.sh /tmp/payload; then
-            echo "::error::verify_public_payload.sh accepted a file it should refuse"
-            exit 1
-          fi
-          echo "Payload gate passed."
+          # Everything else must be refused, one at a time so a single
+          # permissive pattern cannot hide behind another file's rejection.
+          #
+          # RecRoll.exe is the point of this list. The installer allowlist
+          # admits an .exe, and the build tree also contains the standalone
+          # application under that name - a bare \.exe$ would publish it.
+          for bad in RecRoll.exe "RecRoll Instrument.exe" setup.exe unins000.exe \
+                     RecRoll-Windows-x64-Portable.zip \
+                     RecRoll-macOS-Universal-Installer.pkg \
+                     signing-facts.txt RecRoll.pdb Main.cpp build.log; do
+            touch "/tmp/payload/$bad"
+            if ./scripts/verify_public_payload.sh /tmp/payload >/dev/null 2>&1; then
+              echo "::error::verify_public_payload.sh accepted a file it must refuse: $bad"
+              exit 1
+            fi
+            rm -f "/tmp/payload/$bad"
+          done
+          echo "Payload gate passed: deliverables accepted, everything else refused."

@@ -177,6 +177,7 @@ way to publish source into a public log by accident.
 | The "Clone the private source" step fails with 404 | `RECROLL_SOURCE_TOKEN` expired, was revoked, or lacks access to `AA-EION/RecRoll`. The 404 is deliberate on GitHub's side — a private repository you cannot see is indistinguishable from one that does not exist. |
 | `No public deliverable found in src/dist` | The build succeeded but produced no MSI or DMG. Look further up for the packaging step. |
 | `wix build failed` | Usually a payload missing from staging. The MSI script prints which payloads it found before it compiles. |
+| No `.exe` on the release | Inno Setup was not installed on the runner. The build logs a warning and carries on, so the job stays green and the MSIs still ship. |
 | The DMG builds but looks unstyled | Finder scripting was unavailable on the runner. The image is valid, just not laid out. The build logs `styled: no`. |
 | Notarisation times out | Apple's service, not you. Re-run the job. |
 
@@ -186,8 +187,11 @@ way to publish source into a public log by accident.
 
 1. Tag the private repository: `git tag v1.1.0 && git push origin v1.1.0`
 2. Dry run here with `source_ref=v1.1.0` and `release_tag` empty.
-3. Download the artefacts; install the MSI on Windows and mount the DMG on macOS.
+3. Download the artefacts; run the `.exe` on Windows and mount the DMG on macOS.
+   Check the MSIs too if you publish them — they install the same payload, but
+   through a different installer engine.
 4. Run again with `release_tag=v1.1.0`, `sign_pace=on`, `sign_binary=on`.
-5. Check the release page: three installers and two manifests.
+5. Check the release page: the Windows `.exe`, the macOS `.dmg`, both MSIs and
+   the two manifests.
 6. Read the manifests. If either says `unsigned` where you expected otherwise,
    the release is wrong regardless of what the run's green tick says.

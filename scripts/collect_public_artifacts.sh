@@ -10,9 +10,15 @@
 # rather than published by accident.
 #
 # Public deliverables:
-#   windows  RecRoll-<version>-Windows-<arch>.msi
+#   windows  RecRoll-Windows-Universal-Installer.exe  (the headline download:
+#            one file, both architectures, picks at install time)
+#            RecRoll-<version>-Windows-<arch>.msi     (for scripted/IT deploys)
 #   macos    RecRoll-macOS-Universal.dmg   (the branded image, PKG inside)
 # plus the signing manifest for that platform, so a user can tell what they got.
+#
+# The .exe pattern is deliberately narrow rather than "*.exe": this is the
+# extension most easily confused with something unintended, and the build tree
+# contains standalone application binaries that are not installers.
 
 set -euo pipefail
 
@@ -21,7 +27,7 @@ OUT="${2:?output directory}"
 PLATFORM="${3:?windows|macos}"
 
 case "${PLATFORM}" in
-    windows) PATTERNS=("*.msi") ;;
+    windows) PATTERNS=("RecRoll-*-Installer.exe" "*.msi") ;;
     macos)   PATTERNS=("*.dmg") ;;
     *) echo "Unknown platform: ${PLATFORM}" >&2; exit 2 ;;
 esac

@@ -97,7 +97,7 @@ jobs:
         run: ./scripts/guard_no_source.sh
 
   windows:
-    name: "Windows MSI"
+    name: "Windows installers"
     needs: guard
     if: ${{ (inputs.platforms || github.event.client_payload.platforms || 'both') != 'macos' }}
     runs-on: ${{ fromJSON(vars.WINDOWS_RUNNER_LABELS || '["windows-latest"]') }}
@@ -129,6 +129,15 @@ jobs:
           # Without this the token is written into src/.git/config, where any
           # later step - or a stray log of the git config - could read it.
           persist-credentials: false
+
+      # Without this the build script logs a warning and skips the .exe, which
+      # is the headline Windows download: one file carrying both architectures,
+      # choosing between them at install time. The MSIs cannot do that - a
+      # Windows Installer package names one architecture - so they ride along
+      # for scripted and managed deployments instead.
+      - name: Install Inno Setup
+        timeout-minutes: 5
+        run: choco install innosetup --no-progress
 
       - name: Record what is being built
         shell: pwsh
@@ -182,10 +191,10 @@ jobs:
         shell: bash
         run: rm -rf src build-exit.txt
 
-      - name: Upload the MSI
+      - name: Upload the Windows installers
         uses: actions/upload-artifact@v4
         with:
-          name: RecRoll-Windows-MSI
+          name: RecRoll-Windows-Installers
           path: public-dist/*
           if-no-files-found: error
 
@@ -300,8 +309,9 @@ jobs:
           # what was asked for. A run where one platform failed still publishes
           # the other - that is deliberate - but it must not hand a reader a row
           # for a download that is not there.
-          HAVE_WINDOWS=no; HAVE_MACOS=no
-          ls release-files/*.msi >/dev/null 2>&1 && HAVE_WINDOWS=yes
+          HAVE_WINDOWS_EXE=no; HAVE_WINDOWS_MSI=no; HAVE_MACOS=no
+          ls release-files/RecRoll-*-Installer.exe >/dev/null 2>&1 && HAVE_WINDOWS_EXE=yes
+          ls release-files/*.msi >/dev/null 2>&1 && HAVE_WINDOWS_MSI=yes
           ls release-files/*.dmg >/dev/null 2>&1 && HAVE_MACOS=yes
 
           INCOMPLETE=no
@@ -319,20 +329,44 @@ jobs:
               echo "> Windows: \`${WINDOWS_RESULT}\` · macOS: \`${MACOS_RESULT}\`"
               echo
             fi
+            echo "### Download"
+            echo
             echo "| Platform | Download | Installs |"
             echo "|---|---|---|"
-            if [ "${HAVE_WINDOWS}" = "yes" ]; then
-              echo "| Windows 10/11 (x64) | \`RecRoll-*-Windows-x64.msi\` | VST3, CLAP, AAX, standalone |"
-              echo "| Windows on ARM | \`RecRoll-*-Windows-arm64.msi\` | VST3, CLAP, standalone |"
+            if [ "${HAVE_WINDOWS_EXE}" = "yes" ]; then
+              echo "| **Windows 10/11** | \`RecRoll-Windows-Universal-Installer.exe\` | VST3, CLAP, AAX, standalone |"
             fi
             if [ "${HAVE_MACOS}" = "yes" ]; then
-              echo "| macOS 11+ (Universal) | \`RecRoll-macOS-Universal.dmg\` | VST3, AU, CLAP, AAX, standalone |"
+              echo "| **macOS 11+** | \`RecRoll-macOS-Universal.dmg\` | VST3, AU, CLAP, AAX, standalone |"
             fi
             echo
+            if [ "${HAVE_WINDOWS_EXE}" = "yes" ]; then
+              echo "The Windows installer is one file for both Intel/AMD and Snapdragon machines -"
+              echo "it detects which you have and installs the native build. You do not need to know"
+              echo "your processor architecture."
+              echo
+            fi
             if [ "${HAVE_MACOS}" = "yes" ]; then
               echo "The DMG opens onto a branded installer window: double-click **RecRoll Installer.pkg**"
               echo "and follow the prompts. **Read Me First** explains where each format lands, and"
-              echo "**Uninstall RecRoll** removes everything again."
+              echo "**Uninstall RecRoll** removes everything again. The disk image is Universal 2 -"
+              echo "one download for Apple Silicon and Intel."
+              echo
+            fi
+            if [ "${HAVE_WINDOWS_MSI}" = "yes" ]; then
+              echo "<details><summary>Windows Installer packages (scripted and managed deployment)</summary>"
+              echo
+              echo "For Group Policy, Intune, SCCM or \`msiexec /qn\`. A Windows Installer package"
+              echo "carries a single target architecture, so pick the one matching the machine -"
+              echo "installing the x64 package on a Snapdragon succeeds under emulation but leaves"
+              echo "the plug-ins invisible to a native ARM64 host. If in doubt, use the .exe above."
+              echo
+              echo "| Package | For |"
+              echo "|---|---|"
+              echo "| \`RecRoll-*-Windows-x64.msi\` | Intel / AMD — VST3, CLAP, AAX, standalone |"
+              echo "| \`RecRoll-*-Windows-arm64.msi\` | Snapdragon X / Windows on ARM — VST3, CLAP, standalone |"
+              echo
+              echo "</details>"
               echo
             fi
             echo "### Signing"

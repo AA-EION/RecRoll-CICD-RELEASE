@@ -38,20 +38,28 @@ certificate or a `Source/` directory — it belongs in the private repository.
 
 ## What this repository publishes
 
-Exactly two deliverables, both of them end-user installers:
+End-user installers, and nothing else:
 
 | Platform | Asset | Contains |
 |---|---|---|
-| Windows 10/11 (x64) | `RecRoll-<version>-Windows-x64.msi` | VST3, CLAP, AAX, standalone |
-| Windows on ARM | `RecRoll-<version>-Windows-arm64.msi` | VST3, CLAP, standalone |
-| macOS 11+ (Universal 2) | `RecRoll-macOS-Universal.dmg` | A branded EION STUDIOS disk image with the installer package inside |
+| **Windows 10/11** | `RecRoll-Windows-Universal-Installer.exe` | VST3, CLAP, AAX, standalone — one file for Intel/AMD **and** Snapdragon |
+| **macOS 11+** | `RecRoll-macOS-Universal.dmg` | A branded EION STUDIOS disk image with the installer package inside |
+| Windows, scripted | `RecRoll-<version>-Windows-x64.msi`, `-arm64.msi` | The same payload for Group Policy, Intune, SCCM or `msiexec /qn` |
+
+The `.exe` is the headline Windows download because it carries both
+architectures and picks between them at install time. A Windows Installer
+package cannot: its target architecture is fixed in the package, so the MSIs
+come in a matched pair and the user has to know which machine they are on.
+Installing the x64 package on a Snapdragon succeeds under emulation and then
+leaves the plug-ins invisible to a native ARM64 host — a silent wrong answer,
+which is why the MSIs are secondary rather than the front door.
 
 …plus `SIGNING-windows.txt` and `SIGNING-macos.txt`, which state exactly what
 was and was not signed in that build.
 
-Everything else the build produces — the Inno Setup `.exe`, the portable
-archives, the raw AAX bundles, the component packages — stays private and is
-released from the private repository instead.
+Everything else the build produces — the portable archives, the raw AAX
+bundles, the component packages — stays private and is released from the
+private repository instead.
 
 The macOS DMG opens onto a branded window laid out for a first-time user:
 
