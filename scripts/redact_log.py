@@ -114,9 +114,19 @@ def redact(line):
     match = NINJA_PROGRESS.match(stripped)
     if match:
         groups = match.groupdict()
+        # The path starts at the first token carrying a separator, and may
+        # contain spaces from here on - "RecRoll Instrument.vst3" does. Taking
+        # the last whitespace-delimited token instead reported it as
+        # `Linking Instrument"`.
+        tokens = groups["rest"].split()
+        path = tokens[-1] if tokens else ""
+        for index, token in enumerate(tokens):
+            if "/" in token or "\\" in token:
+                path = " ".join(tokens[index:])
+                break
         return "[%s/%s] %s %s" % (
             groups["done"], groups["total"], groups["verb"].strip(),
-            basename(groups["rest"].split()[-1]),
+            basename(path.strip('"')),
         )
 
     match = MSVC_DIAG.match(stripped) or LINK_DIAG.match(stripped)
