@@ -1,0 +1,187 @@
+# Runbook — publishing a RecRoll release from this repository
+
+Everything here happens from the GitHub web UI or the `gh` CLI. You never need
+to clone this repository to use it.
+
+---
+
+## One-time setup
+
+### 1. Create the source token
+
+The runners need to clone the private repository. Give them the narrowest
+credential that allows it.
+
+1. GitHub → **Settings → Developer settings → Personal access tokens →
+   Fine-grained tokens → Generate new token**
+2. **Resource owner:** `AA-EION`
+3. **Repository access:** *Only select repositories* → `AA-EION/RecRoll`
+   (and `AA-EION/AAX-SDK` if you want AAX built)
+4. **Permissions:** *Repository permissions → Contents → **Read-only***.
+   Nothing else. Not Actions, not Workflows, not Metadata write.
+5. **Expiration:** 90 days. Put a reminder in your calendar — an expired token
+   shows up as a checkout failure in the build job, which is easy to misread as
+   a broken workflow.
+
+Add it here as the secret **`RECROLL_SOURCE_TOKEN`**
+(*Settings → Secrets and variables → Actions → New repository secret*).
+
+A token scoped this way can read the source. It cannot push, cannot open pull
+requests, cannot read other repositories, and cannot touch Actions. If it ever
+leaks, the damage is bounded to "someone read code they could have read by
+compromising a runner anyway" — and you revoke it in one click.
+
+### 2. Add the AAX SDK token (optional)
+
+`AAX_SDK_TOKEN` — read access to `AA-EION/AAX-SDK`. Without it the build still
+succeeds; it simply produces no AAX format, and the installers offer no AAX
+component.
+
+### 3. Add the signing secrets (optional)
+
+Copy them from the private repository, or set them up fresh following
+`installer/signing/README.md` there. The full list:
+
+```
+PACE_ACCOUNT  PACE_PASSWORD  PACE_WC_GUID  PACE_SIGN_ID
+
+MACOS_CERT_P12_BASE64  MACOS_CERT_PASSWORD
+MACOS_DEV_ID_APP       MACOS_DEV_ID_INSTALLER   MACOS_KEYCHAIN_PASSWORD
+MACOS_NOTARY_API_KEY_BASE64  MACOS_NOTARY_KEY_ID  MACOS_NOTARY_ISSUER_ID
+   (or) MACOS_NOTARY_APPLE_ID  MACOS_NOTARY_PASSWORD  MACOS_NOTARY_TEAM_ID
+
+WINDOWS_CERT_PFX_BASE64  WINDOWS_CERT_PASSWORD  WINDOWS_TIMESTAMP_URL
+```
+
+Skip the ones you do not have. A build with no signing secrets at all still
+produces complete installers.
+
+### 4. Self-hosted runners (optional)
+
+Set repository *variables* (not secrets) to move a job off the hosted runners:
+
+```
+WINDOWS_RUNNER_LABELS = ["self-hosted","windows","x64"]
+MACOS_RUNNER_LABELS   = ["self-hosted","macOS","ARM64"]
+```
+
+Unset, the jobs use `windows-latest` and `macos-14`.
+
+---
+
+## Publishing a release
+
+**Actions → Build and publish RecRoll → Run workflow.**
+
+| Input | Set it to |
+|---|---|
+| `source_ref` | The tag you are releasing, e.g. `v1.1.0`. A branch or SHA also works. |
+| `release_tag` | The same tag. **Empty means build but do not publish** — that is the dry run. |
+| `sign_pace` | `on` for a real release. |
+| `sign_binary` | `on` for a real release. |
+| `platforms` | `both` |
+| `replace_existing` | `true` if you are re-cutting a tag you already published. |
+| `verbose_logs` | Off. |
+
+Setting both signing switches to `on` rather than leaving them at `auto` is the
+point of the distinction: `auto` skips signing when a secret is missing and
+ships anyway, `on` fails the build. For a release you want the failure.
+
+When the run finishes, the release appears on the **Releases** page with the
+MSIs, the DMG and the signing manifests attached.
+
+### Dry run first
+
+Leave `release_tag` empty. The build runs end to end and uploads the same files
+as **workflow artefacts** instead of publishing them. Download them from the run
+summary, install them on a real machine, then run again with the tag.
+
+This is worth doing for anything that touches packaging. The DMG's window
+layout in particular depends on Finder scripting being available on the runner;
+the build logs whether the layout was applied, but the only way to be sure it
+looks right is to mount it.
+
+### From the CLI
+
+```bash
+gh workflow run release.yml \
+  --repo AA-EION/RecRoll-CICD-RELEASE \
+  -f source_ref=v1.1.0 \
+  -f release_tag=v1.1.0 \
+  -f sign_pace=on \
+  -f sign_binary=on \
+  -f platforms=both
+
+gh run watch --repo AA-EION/RecRoll-CICD-RELEASE
+```
+
+---
+
+## The four signing shapes
+
+`sign_pace` and `sign_binary` are independent, and every combination is a
+supported release:
+
+| `sign_pace` | `sign_binary` | Result |
+|---|---|---|
+| `on` | `on` | The real public release. AAX loads in Pro Tools; Gatekeeper and SmartScreen stay quiet. |
+| `on` | `off` | AAX loads in Pro Tools, but macOS and Windows warn on first launch. Useful for testing AAX without burning a notarisation round trip. |
+| `off` | `on` | Everything signed and notarised, no AAX. Useful when the PACE account is unavailable. |
+| `off` | `off` | Nothing signed. Fast. For testing packaging only — do not hand this to a user expecting a clean install. |
+
+`auto` means "sign if the secrets are there". It is the default so that a run
+by someone without the credentials still works, but it is not what a release
+wants.
+
+Whatever you choose, the published `SIGNING-*.txt` reports what actually
+happened rather than what was requested — a run that asked for signing and
+skipped it says so.
+
+---
+
+## Reading a failed build
+
+Build logs here are **redacted**. This repository is public, and a failing
+compile quotes the source line it choked on. `scripts/redact_log.py` reduces
+diagnostics to file name, line number and error code, and withholds the rest.
+
+So a failure looks like:
+
+```
+RingBuffer.cpp(214): error C2065  [message withheld]
+--- 37 line(s) withheld by scripts/redact_log.py ---
+```
+
+That is enough to locate the problem. For the full text, run the same commit
+through the private repository's own workflow — its logs are private and
+unredacted:
+
+```bash
+gh workflow run build-and-release.yml --repo AA-EION/RecRoll -r <branch>
+```
+
+Turning on `verbose_logs` here does work, and it will publish those source
+lines into a public log. It exists for the case where you have decided that is
+acceptable; it is not a debugging default.
+
+### Failures that are not build failures
+
+| Symptom | Cause |
+|---|---|
+| The "Clone the private source" step fails with 404 | `RECROLL_SOURCE_TOKEN` expired, was revoked, or lacks access to `AA-EION/RecRoll`. The 404 is deliberate on GitHub's side — a private repository you cannot see is indistinguishable from one that does not exist. |
+| `No public deliverable found in src/dist` | The build succeeded but produced no MSI or DMG. Look further up for the packaging step. |
+| `wix build failed` | Usually a payload missing from staging. The MSI script prints which payloads it found before it compiles. |
+| The DMG builds but looks unstyled | Finder scripting was unavailable on the runner. The image is valid, just not laid out. The build logs `styled: no`. |
+| Notarisation times out | Apple's service, not you. Re-run the job. |
+
+---
+
+## Cutting a release end to end
+
+1. Tag the private repository: `git tag v1.1.0 && git push origin v1.1.0`
+2. Dry run here with `source_ref=v1.1.0` and `release_tag` empty.
+3. Download the artefacts; install the MSI on Windows and mount the DMG on macOS.
+4. Run again with `release_tag=v1.1.0`, `sign_pace=on`, `sign_binary=on`.
+5. Check the release page: three installers and two manifests.
+6. Read the manifests. If either says `unsigned` where you expected otherwise,
+   the release is wrong regardless of what the run's green tick says.

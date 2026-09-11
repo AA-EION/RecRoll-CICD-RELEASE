@@ -1,0 +1,75 @@
+name: Guard
+
+# Runs on every change to this repository, including pull requests from forks.
+# It holds no secrets and clones nothing private, so it is safe to run for
+# anyone - and it is the check that keeps this repository what it claims to be:
+# release runners, and nothing else.
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-application-code:
+    name: "No application code"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tree
+        run: ./scripts/guard_no_source.sh
+
+      - name: Check the scripts parse
+        run: |
+          for script in scripts/*.sh; do
+            bash -n "$script" || exit 1
+          done
+          python3 -m py_compile scripts/*.py
+
+      - name: Self-test the log redactor
+        run: |
+          # A compiler diagnostic quotes the source line it failed on. If the
+          # redactor ever stops stripping that, this repository starts leaking
+          # the private source into public logs one build failure at a time.
+          cat > /tmp/sample.log <<'SAMPLE'
+          [12/340] Building CXX object CMakeFiles/RecRoll.dir/Source/dsp/Ring.cpp.o
+          /home/runner/work/src/Source/dsp/Ring.cpp:88:12: error: no member named 'kSecretTuning'
+             88 |     const auto g = kSecretTuning * feedbackShape(x);
+                |                    ^~~~~~~~~~~~~
+          C:\src\Source\dsp\Ring.cpp(88,12): error C2065: 'kSecretTuning': undeclared identifier [RecRoll.vcxproj]
+          [sign] Using wraptool at /usr/local/bin/wraptool
+          SAMPLE
+
+          python3 scripts/redact_log.py /tmp/sample.log > /tmp/redacted.log
+          cat /tmp/redacted.log
+
+          for forbidden in kSecretTuning feedbackShape "const auto g"; do
+            if grep -q "$forbidden" /tmp/redacted.log; then
+              echo "::error::redact_log.py let source content through: $forbidden"
+              exit 1
+            fi
+          done
+
+          # It still has to be useful: the failing file and line must survive.
+          grep -q "Ring.cpp" /tmp/redacted.log || { echo "::error::redactor dropped the file name"; exit 1; }
+          grep -q "88" /tmp/redacted.log || { echo "::error::redactor dropped the line number"; exit 1; }
+          echo "Redactor self-test passed."
+
+      - name: Check the payload gate rejects an unexpected file
+        run: |
+          mkdir -p /tmp/payload
+          touch /tmp/payload/RecRoll-1.1.0-Windows-x64.msi
+          ./scripts/verify_public_payload.sh /tmp/payload
+
+          # Anything that is not a deliverable must be refused, whatever it is.
+          touch /tmp/payload/RecRoll-Windows-x64-Portable.zip
+          if ./scripts/verify_public_payload.sh /tmp/payload; then
+            echo "::error::verify_public_payload.sh accepted a file it should refuse"
+            exit 1
+          fi
+          echo "Payload gate passed."

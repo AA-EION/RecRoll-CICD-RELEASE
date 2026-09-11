@@ -1,0 +1,23 @@
+# The private source is cloned here at build time and deleted afterwards. It
+# must never be committed: this repository is public, and git history is
+# forever.
+/src/
+/RecRoll/
+
+# Build output produced by a local dry run.
+/public-dist/
+/downloaded/
+/release-files/
+*.log
+build-exit.txt
+
+# Signing material. Nothing of the sort belongs here, but an accidental
+# `cp ~/certs/* .` should not become a public commit.
+*.p12
+*.pfx
+*.pem
+*.cer
+*.key
+
+.DS_Store
+__pycache__/
