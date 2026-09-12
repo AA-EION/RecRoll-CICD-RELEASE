@@ -9,9 +9,11 @@ name: Build and publish RecRoll
 #   1. Triggers. Only workflow_dispatch and repository_dispatch start this, and
 #      both require write access to this repository. There is no pull_request
 #      trigger, so a fork's PR can never run a job that holds the source token.
-#   2. Checkout. The source lands in src/ with persist-credentials disabled, so
-#      the token is not left in .git/config, and src/ is deleted before any
-#      artefact is uploaded.
+#   2. Checkout. Two private repositories are cloned: the application source
+#      into src/, and the Kuroko licensing client into kuroko/. Both use
+#      persist-credentials: false, so neither token is left in a .git/config
+#      where a later step could read it, and both directories are deleted -
+#      and their absence asserted - before any artefact is uploaded.
 #   3. Logs. Build output goes through scripts/redact_log.py, because a
 #      compiler quotes the source line it choked on and these logs are public.
 #      There is deliberately no way to turn that off from here: when the full
@@ -81,6 +83,30 @@ env:
   RECROLL_SIGN_BINARY: ${{ inputs.sign_binary || github.event.client_payload.sign_binary || 'auto' }}
   PLATFORMS: ${{ inputs.platforms || github.event.client_payload.platforms || 'both' }}
 
+  # Kuroko DRM / licensing.
+  #
+  # This repository publishes the installers people actually download, so a
+  # build here with licensing off would put unprotected plugins on a public
+  # release page. It is therefore not optional and there is no input to turn it
+  # off: the private workflow has one for deliberate unprotected builds, and
+  # those are not the ones that get published.
+  #
+  # RecRoll's CMakeLists refuses to configure when licensing is on and its
+  # inputs are missing, so a missing variable is a red build rather than a
+  # silently unprotected release.
+  #
+  #   Variables  RECROLL_LICENSE_SERVER_URL, RECROLL_LICENSE_PUBLIC_KEY
+  #   Secrets    RECROLL_GATE_SECRET, KUROKO_SOURCE_TOKEN
+  #
+  # The public key is a variable: it is public by construction and masking it
+  # only obscures which key a build used. The gate secret is a real secret and
+  # is never echoed - and the log redactor withholds anything shaped like it,
+  # because these logs are world-readable.
+  RECROLL_ENABLE_LICENSING: "on"
+  RECROLL_LICENSE_SERVER_URL: ${{ vars.RECROLL_LICENSE_SERVER_URL }}
+  RECROLL_LICENSE_PUBLIC_KEY: ${{ vars.RECROLL_LICENSE_PUBLIC_KEY }}
+  RECROLL_GATE_SECRET: ${{ secrets.RECROLL_GATE_SECRET }}
+
 jobs:
   guard:
     name: "Guard: no application code here"
@@ -129,6 +155,45 @@ jobs:
           # Without this the token is written into src/.git/config, where any
           # later step - or a stray log of the git config - could read it.
           persist-credentials: false
+
+      # A missing variable otherwise surfaces as a 403 from actions/checkout or a
+      # CMake error several steps later, neither of which says what to create.
+      - name: Check the licensing inputs are configured
+        shell: bash
+        env:
+          KUROKO_SOURCE_TOKEN: ${{ secrets.KUROKO_SOURCE_TOKEN }}
+        run: |
+          missing=()
+          [ -n "${KUROKO_SOURCE_TOKEN}" ]        || missing+=("secret  KUROKO_SOURCE_TOKEN (PAT, Contents: read on AA-EION/Kuroko)")
+          [ -n "${RECROLL_LICENSE_SERVER_URL}" ] || missing+=("var     RECROLL_LICENSE_SERVER_URL")
+          [ -n "${RECROLL_LICENSE_PUBLIC_KEY}" ] || missing+=("var     RECROLL_LICENSE_PUBLIC_KEY")
+          [ -n "${RECROLL_GATE_SECRET}" ]        || missing+=("secret  RECROLL_GATE_SECRET")
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Licensing inputs are missing; this repository publishes downloads and must not build unprotected plugins:"
+            printf '  %s\n' "${missing[@]}"
+            exit 1
+          fi
+          if ! printf '%s' "${RECROLL_LICENSE_PUBLIC_KEY}" | grep -qiE '^[0-9a-f]{64}$'; then
+            echo "::error::RECROLL_LICENSE_PUBLIC_KEY must be exactly 64 hex characters."
+            exit 1
+          fi
+          echo "Licensing on, building against ${RECROLL_LICENSE_SERVER_URL}"
+
+      - name: Clone the Kuroko licensing client
+        uses: actions/checkout@v4
+        with:
+          repository: AA-EION/Kuroko
+          ref: ${{ vars.KUROKO_REF || 'main' }}
+          token: ${{ secrets.KUROKO_SOURCE_TOKEN }}
+          path: kuroko
+          # Same reasoning as src/: the token must not survive into a .git/config
+          # that a later step in a public-logged job could read.
+          persist-credentials: false
+
+      - name: Point the build at it
+        shell: bash
+        run: echo "KUROKO_SOURCE_DIR=${GITHUB_WORKSPACE}/kuroko" >> "$GITHUB_ENV"
 
       # Without this the build script logs a warning and skips the .exe, which
       # is the headline Windows download: one file carrying both architectures,
@@ -189,7 +254,19 @@ jobs:
       - name: Remove the private source
         if: always()
         shell: bash
-        run: rm -rf src build-exit.txt
+        run: |
+          rm -rf src kuroko build-exit.txt
+          # Asserted, not assumed. The upload step below takes a path, and a
+          # path is one typo away from sweeping up whatever is left in the
+          # workspace - into an artefact on a public repository, which is not
+          # something a later deletion undoes.
+          for leftover in src kuroko; do
+            if [ -e "${leftover}" ]; then
+              echo "::error::${leftover}/ still exists after cleanup; refusing to continue."
+              exit 1
+            fi
+          done
+          echo "Both private checkouts removed."
 
       - name: Upload the Windows installers
         uses: actions/upload-artifact@v4
@@ -237,6 +314,45 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      # A missing variable otherwise surfaces as a 403 from actions/checkout or a
+      # CMake error several steps later, neither of which says what to create.
+      - name: Check the licensing inputs are configured
+        shell: bash
+        env:
+          KUROKO_SOURCE_TOKEN: ${{ secrets.KUROKO_SOURCE_TOKEN }}
+        run: |
+          missing=()
+          [ -n "${KUROKO_SOURCE_TOKEN}" ]        || missing+=("secret  KUROKO_SOURCE_TOKEN (PAT, Contents: read on AA-EION/Kuroko)")
+          [ -n "${RECROLL_LICENSE_SERVER_URL}" ] || missing+=("var     RECROLL_LICENSE_SERVER_URL")
+          [ -n "${RECROLL_LICENSE_PUBLIC_KEY}" ] || missing+=("var     RECROLL_LICENSE_PUBLIC_KEY")
+          [ -n "${RECROLL_GATE_SECRET}" ]        || missing+=("secret  RECROLL_GATE_SECRET")
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Licensing inputs are missing; this repository publishes downloads and must not build unprotected plugins:"
+            printf '  %s\n' "${missing[@]}"
+            exit 1
+          fi
+          if ! printf '%s' "${RECROLL_LICENSE_PUBLIC_KEY}" | grep -qiE '^[0-9a-f]{64}$'; then
+            echo "::error::RECROLL_LICENSE_PUBLIC_KEY must be exactly 64 hex characters."
+            exit 1
+          fi
+          echo "Licensing on, building against ${RECROLL_LICENSE_SERVER_URL}"
+
+      - name: Clone the Kuroko licensing client
+        uses: actions/checkout@v4
+        with:
+          repository: AA-EION/Kuroko
+          ref: ${{ vars.KUROKO_REF || 'main' }}
+          token: ${{ secrets.KUROKO_SOURCE_TOKEN }}
+          path: kuroko
+          # Same reasoning as src/: the token must not survive into a .git/config
+          # that a later step in a public-logged job could read.
+          persist-credentials: false
+
+      - name: Point the build at it
+        shell: bash
+        run: echo "KUROKO_SOURCE_DIR=${GITHUB_WORKSPACE}/kuroko" >> "$GITHUB_ENV"
+
       - name: Record what is being built
         working-directory: src
         run: |
@@ -264,7 +380,15 @@ jobs:
 
       - name: Remove the private source
         if: always()
-        run: rm -rf src
+        run: |
+          rm -rf src kuroko
+          for leftover in src kuroko; do
+            if [ -e "${leftover}" ]; then
+              echo "::error::${leftover}/ still exists after cleanup; refusing to continue."
+              exit 1
+            fi
+          done
+          echo "Both private checkouts removed."
 
       - name: Upload the DMG
         uses: actions/upload-artifact@v4

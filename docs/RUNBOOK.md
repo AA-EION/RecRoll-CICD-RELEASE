@@ -31,13 +31,40 @@ requests, cannot read other repositories, and cannot touch Actions. If it ever
 leaks, the damage is bounded to "someone read code they could have read by
 compromising a runner anyway" — and you revoke it in one click.
 
-### 2. Add the AAX SDK token (optional)
+### 2. Add the licensing inputs (required)
+
+The plugins this repository publishes are licensed products, and the licensing
+client lives in a second private repository. Create a second fine-grained PAT
+exactly like the first — *Contents: read-only*, on `AA-EION/Kuroko`, nothing
+else — and add it as the secret **`KUROKO_SOURCE_TOKEN`**.
+
+Then add:
+
+| Kind | Name | Value |
+|---|---|---|
+| Secret | `RECROLL_GATE_SECRET` | The per-product gate secret, e.g. `0x5B27E1A3u`. Must match the value the private repository builds with. |
+| Variable | `RECROLL_LICENSE_SERVER_URL` | `https://lic.eionstudios.com` — the server the plugins call. HTTPS only; the build refuses anything else. |
+| Variable | `RECROLL_LICENSE_PUBLIC_KEY` | The 64-hex-character Ed25519 public key the licensing server prints on boot. |
+
+The last two are *variables* on purpose. An endpoint and a verify-only public
+key are public by construction, and hiding them in logs would only make it
+impossible to tell which server and which key a release was built against.
+`RECROLL_GATE_SECRET` is the real secret — it is what somebody patching the
+binary would need to forge the license gate's check field — so it is never
+printed, and `scripts/redact_log.py` withholds any line shaped like it.
+
+None of these are optional. A build here produces the installers people
+download; one with licensing off would publish unprotected plugins. If any are
+missing the run fails in its first minute with a message naming exactly what to
+create, rather than 40 minutes later in a CMake error.
+
+### 3. Add the AAX SDK token (optional)
 
 `AAX_SDK_TOKEN` — read access to `AA-EION/AAX-SDK`. Without it the build still
 succeeds; it simply produces no AAX format, and the installers offer no AAX
 component.
 
-### 3. Add the signing secrets (optional)
+### 4. Add the signing secrets (optional)
 
 Copy them from the private repository, or set them up fresh following
 `installer/signing/README.md` there. The full list:
@@ -175,6 +202,10 @@ way to publish source into a public log by accident.
 | Symptom | Cause |
 |---|---|
 | The "Clone the private source" step fails with 404 | `RECROLL_SOURCE_TOKEN` expired, was revoked, or lacks access to `AA-EION/RecRoll`. The 404 is deliberate on GitHub's side — a private repository you cannot see is indistinguishable from one that does not exist. |
+| The "Clone the Kuroko licensing client" step fails with 404 | The same, for `KUROKO_SOURCE_TOKEN` and `AA-EION/Kuroko`. |
+| "Licensing inputs are missing" in the first minute | One of `KUROKO_SOURCE_TOKEN`, `RECROLL_GATE_SECRET`, `RECROLL_LICENSE_SERVER_URL` or `RECROLL_LICENSE_PUBLIC_KEY` is unset. The message names which. This check exists so the run fails here instead of at CMake configure time. |
+| `RECROLL_LICENSE_PUBLIC_KEY must be exactly 64 hex characters` | The variable was pasted with a stray space, a `0x` prefix, or truncated. It is the plain hex the server prints, nothing around it. |
+| CMake: `SERVER_URL must be https://` | `RECROLL_LICENSE_SERVER_URL` is plaintext. Licensing traffic carries serial keys; the build will not produce a release that sends them in the clear. |
 | `No public deliverable found in src/dist` | The build succeeded but produced no MSI or DMG. Look further up for the packaging step. |
 | `wix build failed` | Usually a payload missing from staging. The MSI script prints which payloads it found before it compiles. |
 | No `.exe` on the release | Inno Setup was not installed on the runner. The build logs a warning and carries on, so the job stays green and the MSIs still ship. |

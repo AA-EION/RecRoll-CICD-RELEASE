@@ -83,6 +83,18 @@ CREDENTIAL_SHAPED = (
     # password as an argument, so any tool that echoes its own command line -
     # or a shell that traces it - puts one in the log.
     re.compile(r"(?i)(^|\s)(-p|/p|-P|--password|--keypassword|--pass|--keyfile-password)\s+\S"),
+    # Secret-carrying CMake definitions. The build scripts never print these,
+    # but CMake echoes the whole command line when a configure step fails, and
+    # a failing configure is exactly when somebody reads these logs closely.
+    # RECROLL_GATE_SECRET is the one that matters: it is what a patcher would
+    # need to forge the license gate's keyed check field.
+    re.compile(r"(?i)-D[A-Za-z0-9_]*(SECRET|PRIVATE_KEY|TOKEN|PASSWORD|PASSWD)[A-Za-z0-9_]*="),
+    re.compile(r"(?i)\b(GATE_SECRET|KUROKO_PRIVATE_KEY|KUROKO_SOURCE_TOKEN|RECROLL_SOURCE_TOKEN)\b"),
+    # A 64-character hex run. The Ed25519 *public* key is this shape and is
+    # harmless, but so is a 32-byte private seed and so is any raw key material
+    # rendered as hex - and nothing in this pipeline needs to print any of them
+    # for a log to be useful. Withholding costs nothing here.
+    re.compile(r"\b[0-9a-fA-F]{64}\b"),
 )
 
 # Source excerpts clang prints beneath a diagnostic, and their caret line.

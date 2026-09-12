@@ -57,6 +57,31 @@ token is not written into `src/.git/config` where a later step or a stray
 `git config --list` would expose it. It reaches the runner as a masked secret
 and is not passed on the command line of anything.
 
+`KUROKO_SOURCE_TOKEN`, which clones the licensing client into `kuroko/`, is
+scoped and handled identically. Both checkouts are deleted before any artefact
+is uploaded, and the cleanup step *asserts* they are gone rather than assuming
+it: the upload step takes a path, and a path is one typo away from sweeping the
+workspace into an artefact on a public repository — which a later deletion does
+not undo.
+
+### 3b. Licensing material leaks into a public log
+
+`RECROLL_GATE_SECRET` is the constant woven into the license gate's keyed check
+field. Someone patching a binary cannot recompute that field without it, which
+is the whole reason patching the gate does not pay off — so it is the one
+licensing input that must never appear here.
+
+Nothing prints it on purpose. The build scripts echo the licensing *endpoint*,
+because a release built against the wrong server is worth catching by eye, and
+nothing else. The exposure that remains is a tool echoing its own command line,
+which CMake does when a configure step fails — precisely when these logs get
+read closely. `scripts/redact_log.py` therefore withholds any line carrying a
+`-D…SECRET…=`-shaped definition, the names of the licensing secrets, or a
+64-character hex run (the shape of a public key, and equally of a private seed).
+`guard.yml` asserts all of that on every push, and asserts that the endpoint
+line still survives — a redactor that hides everything is safe, useless, and
+switched off by the next person who needs it.
+
 ### 4. Build logs quote the source
 
 This is the one that is easy to miss. Compilers are *helpful*: clang prints the

@@ -21,3 +21,7 @@ build-exit.txt
 
 .DS_Store
 __pycache__/
+
+# Cloned at build time and deleted before anything is uploaded. Never committed.
+kuroko/
+Kuroko/

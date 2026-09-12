@@ -38,7 +38,7 @@ DENIED_PATTERNS=(
     '\.cmake$'
     '\.(iss|wxs|wxi|wxl)$'
     '\.(vcxproj|sln|xcodeproj|jucer)$'
-    '(^|/)(Source|Resources|installer|libs|Assets)/'
+    '(^|/)(Source|Resources|installer|libs|Assets|modules)/'
     '\.(p12|pfx|pem|cer|key|jks)$'
 )
 
@@ -83,14 +83,19 @@ for pattern in "${DENIED_PATTERNS[@]}"; do
     fi
 done
 
-# --- 3. No vendored checkout of the private repository ----------------------
-if [ -e "src" ] || [ -e "RecRoll" ]; then
-    FAILED=1
-    echo
-    echo "FAIL: a checkout directory (src/ or RecRoll/) is present in the tree."
-    echo "  The private source is cloned at build time and deleted afterwards;"
-    echo "  it must never be committed. Check .gitignore."
-fi
+# --- 3. No vendored checkout of a private repository ------------------------
+# Two are cloned at build time: the application source into src/, and the
+# Kuroko licensing client into kuroko/. Both are deleted before any artefact is
+# uploaded, and neither may ever be committed here.
+for checkout in src RecRoll kuroko Kuroko; do
+    if [ -e "${checkout}" ]; then
+        FAILED=1
+        echo
+        echo "FAIL: a checkout directory (${checkout}/) is present in the tree."
+        echo "  Private sources are cloned at build time and deleted afterwards;"
+        echo "  they must never be committed. Check .gitignore."
+    fi
+done
 
 echo
 if [ "${FAILED}" -eq 0 ]; then

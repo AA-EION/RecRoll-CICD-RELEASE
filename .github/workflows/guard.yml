@@ -47,8 +47,12 @@ jobs:
           -----BEGIN PRIVATE KEY-----
           [sign] wraptool sign --account eion -p Hunter2Hunter2 --wcguid ABC
           signtool sign /fd SHA256 /f recroll-signing.pfx /p MyPfxPassword file.msi
+          cmake -B build -DRECROLL_GATE_SECRET=0xDEADBEEFu -DRECROLL_ENABLE_LICENSING=ON
+          -- trust anchor a99c068611a7d8df7009890fb5d2575a1df93326b451715fe759a30fe7dd7626
+          KUROKO_PRIVATE_KEY is set from the environment
           [sign] Using wraptool at /usr/local/bin/wraptool
           [sign] PACE Eden signed 2 AAX bundle(s).
+            Licensing      : on -> https://lic.eionstudios.com
           SAMPLE
 
           python3 scripts/redact_log.py /tmp/sample.log > /tmp/redacted.log
@@ -71,6 +75,24 @@ jobs:
               exit 1
             fi
           done
+
+          # Licensing material. The gate secret is what a patcher would need to
+          # forge the license gate's keyed check field, and these logs are
+          # world-readable. Nothing prints it on purpose - this is for the tool
+          # that echoes its own command line when a configure step fails.
+          for forbidden in 0xDEADBEEFu a99c068611a7d8df KUROKO_PRIVATE_KEY GATE_SECRET; do
+            if grep -q "$forbidden" /tmp/redacted.log; then
+              echo "::error::redact_log.py let licensing material through: $forbidden"
+              exit 1
+            fi
+          done
+
+          # ...while the build's own licensing status line still has to survive.
+          # A release built against the wrong licensing server is worth catching
+          # by eye, and a redactor that hides the endpoint too makes that
+          # impossible without reading the private log.
+          grep -q "lic.eionstudios.com" /tmp/redacted.log \
+            || { echo "::error::redactor dropped the licensing status line"; exit 1; }
 
           # It still has to be useful: a redactor that hides everything is safe
           # and useless, and gets switched off by the next person to need it.

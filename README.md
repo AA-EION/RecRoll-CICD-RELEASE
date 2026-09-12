@@ -106,8 +106,30 @@ reachable: both signed, PACE only, binaries only, neither.
 | Secret | Purpose |
 |---|---|
 | `RECROLL_SOURCE_TOKEN` | **Required.** Fine-grained PAT with read-only *Contents* access to `AA-EION/RecRoll`. Nothing else. |
+| `KUROKO_SOURCE_TOKEN` | **Required.** The same, for `AA-EION/Kuroko` — the licensing client the plugins are built against. |
+| `RECROLL_GATE_SECRET` | **Required.** The per-product licensing gate secret, e.g. `0x5B27E1A3u`. |
 | `AAX_SDK_TOKEN` | Read access to `AA-EION/AAX-SDK`, for the AAX format |
 | `PACE_*`, `MACOS_*`, `WINDOWS_*` | Signing credentials — see the private repository's `installer/signing/README.md` |
+
+## Required variables
+
+| Variable | Purpose |
+|---|---|
+| `RECROLL_LICENSE_SERVER_URL` | The licensing server the plugins call, e.g. `https://lic.eionstudios.com`. Must be HTTPS; the build refuses anything else. |
+| `RECROLL_LICENSE_PUBLIC_KEY` | The Ed25519 trust anchor, 64 hex characters, printed by the licensing server on boot. |
+
+Variables, not secrets, and deliberately so: both are public by construction —
+an endpoint clients connect to, and a key that only *verifies* — and masking
+them in logs would make it impossible to tell which server and which key a
+release was built against without opening the private log. The gate secret is
+the one that is genuinely secret, and the log redactor withholds anything shaped
+like it.
+
+The licensing ones have no "optional" mode here. This repository publishes the
+installers people download, so a build with licensing off would put unprotected
+plugins on a public release page; the build fails instead. The private
+repository has a per-run switch for deliberate unprotected builds, and those are
+not the builds that get published.
 
 Without the signing secrets the build still succeeds and produces unsigned
 installers, which the manifest reports honestly.
