@@ -1,5 +1,8 @@
 # Runbook — publishing a RecRoll release from this repository
 
+For the current version reset and artifact-only verification steps, start with
+[RELEASE-1.0.0.md](RELEASE-1.0.0.md). Use full 40-character commit SHAs for pinned builds.
+
 Everything here happens from the GitHub web UI or the `gh` CLI. You never need
 to clone this repository to use it.
 
@@ -80,8 +83,9 @@ MACOS_NOTARY_API_KEY_BASE64  MACOS_NOTARY_KEY_ID  MACOS_NOTARY_ISSUER_ID
 WINDOWS_CERT_PFX_BASE64  WINDOWS_CERT_PASSWORD  WINDOWS_TIMESTAMP_URL
 ```
 
-Skip the ones you do not have. A build with no signing secrets at all still
-produces complete installers.
+For unsigned testing use both signing modes `off`. For publication provision
+the licensed PACE tools/authorization as well as the credentials, then use both
+modes `on`. A hosted runner does not supply PACE tools automatically.
 
 ### 4. Self-hosted runners (optional)
 
@@ -102,12 +106,12 @@ Unset, the jobs use `windows-latest` and `macos-14`.
 
 | Input | Set it to |
 |---|---|
-| `source_ref` | The tag you are releasing, e.g. `v1.1.0`. A branch or SHA also works. |
+| `source_ref` | The tag you are releasing, a new, unused candidate tag such as `v1.0.0-rc.1`. A branch or SHA also works. |
 | `release_tag` | The same tag. **Empty means build but do not publish** — that is the dry run. |
 | `sign_pace` | `on` for a real release. |
 | `sign_binary` | `on` for a real release. |
 | `platforms` | `both` |
-| `replace_existing` | `true` if you are re-cutting a tag you already published. |
+| `replace_existing` | `false` for normal releases; use a new unused tag. Never replace historical GPL tags. |
 | `prerelease` | `true` for a release candidate. It is forced on anyway when nothing was signed. |
 
 Setting both signing switches to `on` rather than leaving them at `auto` is the
@@ -115,7 +119,7 @@ point of the distinction: `auto` skips signing when a secret is missing and
 ships anyway, `on` fails the build. For a release you want the failure.
 
 When the run finishes, the release appears on the **Releases** page with the
-MSIs, the DMG and the signing manifests attached.
+universal Windows EXE, both MSIs, the DMG and the signing reports attached.
 
 An unsigned build is always published as a pre-release, whatever you set
 `prerelease` to. Gatekeeper and SmartScreen both warn on an unsigned installer,
@@ -139,8 +143,10 @@ looks right is to mount it.
 ```bash
 gh workflow run release.yml \
   --repo AA-EION/RecRoll-CICD-RELEASE \
-  -f source_ref=v1.1.0 \
-  -f release_tag=v1.1.0 \
+  --ref main \
+  -f source_ref=FULL_REVIEWED_SOURCE_SHA \
+  -f release_tag=NEW_UNUSED_CANDIDATE_TAG \
+  -f replace_existing=false -f prerelease=true \
   -f sign_pace=on \
   -f sign_binary=on \
   -f platforms=both
@@ -216,12 +222,12 @@ way to publish source into a public log by accident.
 
 ## Cutting a release end to end
 
-1. Tag the private repository: `git tag v1.1.0 && git push origin v1.1.0`
-2. Dry run here with `source_ref=v1.1.0` and `release_tag` empty.
+1. Choose a reviewed full source commit and a new, unused candidate tag. Preserve the historical `v1.0.0` and `v1.1.0` tags.
+2. Dry run here with `source_ref=FULL_REVIEWED_SOURCE_SHA` and `release_tag` empty.
 3. Download the artefacts; run the `.exe` on Windows and mount the DMG on macOS.
    Check the MSIs too if you publish them — they install the same payload, but
    through a different installer engine.
-4. Run again with `release_tag=v1.1.0`, `sign_pace=on`, `sign_binary=on`.
+4. Run again with `release_tag=NEW_UNUSED_CANDIDATE_TAG`, `sign_pace=on`, `sign_binary=on`.
 5. Check the release page: the Windows `.exe`, the macOS `.dmg`, both MSIs and
    the two manifests.
 6. Read the manifests. If either says `unsigned` where you expected otherwise,

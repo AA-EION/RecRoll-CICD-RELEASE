@@ -25,6 +25,7 @@ ALLOWED_PREFIXES=(
     ".gitattributes"
     ".editorconfig"
     "README.md"
+    "VERSION"
     "AGENTS.md"
 )
 

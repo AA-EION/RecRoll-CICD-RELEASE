@@ -126,13 +126,13 @@ this catches that case.
 ### 5. Build products carry more than intended
 
 The private build produces a lot: portable archives of every binary, raw AAX
-bundles, component packages, the Inno Setup `.exe`, debug output. Only the MSI
-and the DMG are meant to be public.
+bundles, component packages, the Inno Setup `.exe`, debug output. Only the universal Windows installer, the two architecture-specific MSIs,
+the macOS DMG and signing reports are meant to be public.
 
 **Closed twice, on purpose:**
 
 - [`scripts/collect_public_artifacts.sh`](../scripts/collect_public_artifacts.sh)
-  runs on each build runner and copies **only** `*.msi` (Windows) or `*.dmg`
+  runs on each build runner and copies **only** `RecRoll-*-Installer.exe` and `*.msi` (Windows) or `*.dmg`
   (macOS), plus that platform's signing manifest. It is an allowlist: a new
   artefact type appearing in the build is excluded until someone decides
   otherwise.
@@ -183,10 +183,11 @@ password and the Authenticode PFX while CMake fetches and compiles JUCE and
 `clap-juce-extensions`. Anything that executes during that build can read the
 job's environment.
 
-`clap-juce-extensions` is fetched at **`GIT_TAG main`** in the private
-repository's `CMakeLists.txt` — a moving branch, not a pinned commit. A
-compromise of that repository, or of any commit pushed to its default branch,
-runs in a job holding code-signing keys. **Pin it to a tag or commit SHA.**
+The current private source pins `clap-juce-extensions` to a commit and JUCE to
+its release tag. `KUROKO_REVISION` pins the licensing client; an operator can
+explicitly override it with `kuroko_ref`. Review all selected revisions before
+starting a job that has access to signing credentials. Historical source refs
+may predate these pins.
 
 The stronger fix for both: move the signing secrets into a GitHub
 **Environment** with a required reviewer, and let ordinary branch and
@@ -255,3 +256,11 @@ Assume the worst about timing: GitHub's event feed is scraped continuously, and
    someone else sign something as you.
 5. Note what closed the gap, and add a check to `guard.yml` so the same shape of
    mistake fails the build next time.
+
+## Version metadata and revision selection
+
+The layout guard allows the root `VERSION` metadata file. This does not widen
+the installer artifact allowlists or permit application source. The workflow
+selects Kuroko from an explicit input, the source-controlled pin, the configured
+fallback, or main, in that order. Private checkouts still use no persisted
+credentials and are removed before uploading the existing allowlisted files.
