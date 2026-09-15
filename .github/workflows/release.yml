@@ -34,8 +34,12 @@ on:
         description: "Branch, tag or SHA of AA-EION/RecRoll to build."
         required: false
         default: "main"
+      kuroko_ref:
+        description: "Optional Kuroko branch, tag or SHA; defaults to the source KUROKO_REVISION pin."
+        required: false
+        default: ""
       release_tag:
-        description: "Publish as this tag (e.g. v1.1.0). Leave empty to build without releasing."
+        description: "Publish as this tag (e.g. v1.0.0). Leave empty to build without releasing."
         required: false
         default: ""
       sign_pace:
@@ -60,7 +64,7 @@ on:
         description: "Delete any existing release of that tag first, so it is recreated clean."
         type: boolean
         required: false
-        default: true
+        default: false
       prerelease:
         description: "Mark the release as a pre-release. Forced on anyway when nothing was signed."
         type: boolean
@@ -180,11 +184,25 @@ jobs:
           fi
           echo "Licensing on, building against ${RECROLL_LICENSE_SERVER_URL}"
 
+      - name: Select the licensing revision
+        shell: bash
+        env:
+          REQUESTED_KUROKO_REF: ${{ inputs.kuroko_ref || github.event.client_payload.kuroko_ref }}
+          CONFIGURED_KUROKO_REF: ${{ vars.KUROKO_REF }}
+        run: |
+          ref="${REQUESTED_KUROKO_REF:-}"
+          if [ -z "$ref" ] && [ -f "src/KUROKO_REVISION" ]; then
+            ref="$(tr -d '\r\n' < "src/KUROKO_REVISION")"
+          fi
+          ref="${ref:-${CONFIGURED_KUROKO_REF:-main}}"
+          git check-ref-format --allow-onelevel "$ref" >/dev/null || { echo "::error::Invalid Kuroko revision"; exit 1; }
+          printf 'KUROKO_BUILD_REF=%s\n' "$ref" >> "$GITHUB_ENV"
+
       - name: Clone the Kuroko licensing client
         uses: actions/checkout@v4
         with:
           repository: AA-EION/Kuroko
-          ref: ${{ vars.KUROKO_REF || 'main' }}
+          ref: ${{ env.KUROKO_BUILD_REF }}
           token: ${{ secrets.KUROKO_SOURCE_TOKEN }}
           path: kuroko
           # Same reasoning as src/: the token must not survive into a .git/config
@@ -338,11 +356,25 @@ jobs:
           fi
           echo "Licensing on, building against ${RECROLL_LICENSE_SERVER_URL}"
 
+      - name: Select the licensing revision
+        shell: bash
+        env:
+          REQUESTED_KUROKO_REF: ${{ inputs.kuroko_ref || github.event.client_payload.kuroko_ref }}
+          CONFIGURED_KUROKO_REF: ${{ vars.KUROKO_REF }}
+        run: |
+          ref="${REQUESTED_KUROKO_REF:-}"
+          if [ -z "$ref" ] && [ -f "src/KUROKO_REVISION" ]; then
+            ref="$(tr -d '\r\n' < "src/KUROKO_REVISION")"
+          fi
+          ref="${ref:-${CONFIGURED_KUROKO_REF:-main}}"
+          git check-ref-format --allow-onelevel "$ref" >/dev/null || { echo "::error::Invalid Kuroko revision"; exit 1; }
+          printf 'KUROKO_BUILD_REF=%s\n' "$ref" >> "$GITHUB_ENV"
+
       - name: Clone the Kuroko licensing client
         uses: actions/checkout@v4
         with:
           repository: AA-EION/Kuroko
-          ref: ${{ vars.KUROKO_REF || 'main' }}
+          ref: ${{ env.KUROKO_BUILD_REF }}
           token: ${{ secrets.KUROKO_SOURCE_TOKEN }}
           path: kuroko
           # Same reasoning as src/: the token must not survive into a .git/config

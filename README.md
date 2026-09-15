@@ -22,7 +22,7 @@ workflows, guard scripts and documentation — nothing else.
 The plugin's source, its build system, its installers and its signing scripts
 all live in the private **[AA-EION/RecRoll](https://github.com/AA-EION/RecRoll)**
 repository. This repository clones that one at build time, runs *its* scripts,
-publishes two files, and deletes the clone.
+publishes the allowlisted installers and signing reports, and deletes the clone.
 
 A file committed here is public the moment it is pushed, and deleting it later
 does not undo that — it stays in the git history and in every fork and clone
@@ -81,7 +81,9 @@ platforms present one brand.
 
 ## Using it
 
-Full instructions: **[docs/RUNBOOK.md](docs/RUNBOOK.md)**
+Version **1.0.0**. Release-specific instructions: **[docs/RELEASE-1.0.0.md](docs/RELEASE-1.0.0.md)**
+
+Full operations reference: **[docs/RUNBOOK.md](docs/RUNBOOK.md)**
 Security model: **[docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md)**
 For AI agents: **[AGENTS.md](AGENTS.md)**
 
@@ -90,6 +92,7 @@ The short version — from the **Actions** tab, run **Build and publish RecRoll*
 | Input | Meaning |
 |---|---|
 | `source_ref` | Branch, tag or SHA of `AA-EION/RecRoll` to build |
+| `kuroko_ref` | Optional licensing revision override; otherwise use the source `KUROKO_REVISION` pin |
 | `release_tag` | Publish under this tag. **Leave empty to build without releasing.** |
 | `sign_pace` | `auto` / `on` / `off` — PACE Eden signing for AAX |
 | `sign_binary` | `auto` / `on` / `off` — Developer ID and Authenticode signing, and notarisation |

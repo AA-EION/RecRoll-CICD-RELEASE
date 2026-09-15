@@ -109,8 +109,8 @@ jobs:
           rm -rf /tmp/payload
           mkdir -p /tmp/payload
           for f in RecRoll-Windows-Universal-Installer.exe \
-                   RecRoll-1.1.0-Windows-x64.msi \
-                   RecRoll-1.1.0-Windows-arm64.msi \
+                   RecRoll-1.0.0-Windows-x64.msi \
+                   RecRoll-1.0.0-Windows-arm64.msi \
                    RecRoll-macOS-Universal.dmg \
                    SIGNING-windows.txt SIGNING-macos.txt; do
             touch "/tmp/payload/$f"
