@@ -592,11 +592,8 @@ jobs:
           PRERELEASE="${{ steps.kind.outputs.flag }}"
 
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $TAG exists; updating it in place."
-            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
-              --notes-file release-notes.md \
-              --prerelease="$( [ -n "$PRERELEASE" ] && echo true || echo false )"
-            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release-files/*
+            echo "::error::Release $TAG already exists. Choose an unused tag or explicitly enable replacement."
+            exit 1
           else
             # shellcheck disable=SC2086 -- PRERELEASE is a single flag or empty
             gh release create "$TAG" \
