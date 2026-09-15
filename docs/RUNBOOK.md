@@ -222,12 +222,12 @@ way to publish source into a public log by accident.
 
 ## Cutting a release end to end
 
-1. Tag the private repository: `git tag v1.1.0 && git push origin v1.1.0`
-2. Dry run here with `source_ref=v1.1.0` and `release_tag` empty.
+1. Choose a reviewed full source commit and a new, unused candidate tag. Preserve the historical `v1.0.0` and `v1.1.0` tags.
+2. Dry run here with `source_ref=FULL_REVIEWED_SOURCE_SHA` and `release_tag` empty.
 3. Download the artefacts; run the `.exe` on Windows and mount the DMG on macOS.
    Check the MSIs too if you publish them — they install the same payload, but
    through a different installer engine.
-4. Run again with `release_tag=v1.1.0`, `sign_pace=on`, `sign_binary=on`.
+4. Run again with `release_tag=NEW_UNUSED_CANDIDATE_TAG`, `sign_pace=on`, `sign_binary=on`.
 5. Check the release page: the Windows `.exe`, the macOS `.dmg`, both MSIs and
    the two manifests.
 6. Read the manifests. If either says `unsigned` where you expected otherwise,
