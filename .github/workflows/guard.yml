@@ -1,0 +1,102 @@
+name: Guard
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Layout check
+        run: ./scripts/guard_no_source.sh
+
+      - name: Syntax check
+        run: |
+          for script in scripts/*.sh; do
+            bash -n "$script" || exit 1
+          done
+          python3 -m py_compile scripts/*.py
+
+      - name: Redactor test
+        run: |
+          cat > /tmp/sample.log <<'SAMPLE'
+          [12/340] Building CXX object CMakeFiles/RecRoll.dir/Source/dsp/Ring.cpp.o
+          /home/runner/work/src/Source/dsp/Ring.cpp:88:12: error: no member named 'kSecretTuning'
+             88 |     const auto g = kSecretTuning * feedbackShape(x);
+                |                    ^~~~~~~~~~~~~
+          C:\src\Source\dsp\Ring.cpp(88,12): error C2065: 'kSecretTuning': undeclared identifier [RecRoll.vcxproj]
+          Cloning https://x-access-token:ghp_AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH1234@github.com/example-org/private-repo.git
+          MACOS_CERT_P12_BASE64=MIIKvQIBAzCCCncGCSqGSIb3DQEHAaCCCmgEggpkMIIKYDCCBRcGCSqGSIb3DQEHBqCCBQgwggUEAgEAMIIE/QYJKoZIhvcNAQcBMBwGCiqGSIb3DQEMAQYwDgQI
+          -----BEGIN PRIVATE KEY-----
+          [sign] wraptool sign --account eion -p Hunter2Hunter2 --wcguid ABC
+          signtool sign /fd SHA256 /f recroll-signing.pfx /p MyPfxPassword file.msi
+          cmake -B build -DRECROLL_GATE_SECRET=0xDEADBEEFu -DRECROLL_ENABLE_LICENSING=ON
+          -- trust anchor a99c068611a7d8df7009890fb5d2575a1df93326b451715fe759a30fe7dd7626
+          KUROKO_PRIVATE_KEY is set from the environment
+          [sign] Using wraptool at /usr/local/bin/wraptool
+          [sign] PACE Eden signed 2 AAX bundle(s).
+            Licensing      : on -> https://license.example.com
+          SAMPLE
+
+          python3 scripts/redact_log.py /tmp/sample.log > /tmp/redacted.log
+          cat /tmp/redacted.log
+
+          for forbidden in kSecretTuning feedbackShape "const auto g"; do
+            if grep -q "$forbidden" /tmp/redacted.log; then
+              echo "::error::redactor allowed source: $forbidden"
+              exit 1
+            fi
+          done
+
+          for forbidden in ghp_AAAABBBB MIIKvQIBAzCCCnc "BEGIN PRIVATE KEY" Hunter2Hunter2 MyPfxPassword; do
+            if grep -q "$forbidden" /tmp/redacted.log; then
+              echo "::error::redactor allowed credential: $forbidden"
+              exit 1
+            fi
+          done
+
+          for forbidden in 0xDEADBEEFu a99c068611a7d8df KUROKO_PRIVATE_KEY GATE_SECRET; do
+            if grep -q "$forbidden" /tmp/redacted.log; then
+              echo "::error::redactor allowed secret material: $forbidden"
+              exit 1
+            fi
+          done
+
+          grep -q "license.example.com" /tmp/redacted.log || exit 1
+          grep -q "Ring.cpp" /tmp/redacted.log || exit 1
+          grep -q "88" /tmp/redacted.log || exit 1
+          grep -q "PACE Eden signed 2 AAX" /tmp/redacted.log || exit 1
+
+      - name: Payload check
+        run: |
+          rm -rf /tmp/payload
+          mkdir -p /tmp/payload
+          for f in RecRoll-Windows-Universal-Installer.exe \
+                   RecRoll-1.0.0-Windows-x64.msi \
+                   RecRoll-1.0.0-Windows-arm64.msi \
+                   RecRoll-macOS-Universal.dmg \
+                   SIGNING-windows.txt SIGNING-macos.txt; do
+            touch "/tmp/payload/$f"
+          done
+          ./scripts/verify_public_payload.sh /tmp/payload
+
+          for bad in RecRoll.exe "RecRoll Instrument.exe" setup.exe unins000.exe \
+                     RecRoll-Windows-x64-Portable.zip \
+                     RecRoll-macOS-Universal-Installer.pkg \
+                     signing-facts.txt RecRoll.pdb Main.cpp build.log; do
+            touch "/tmp/payload/$bad"
+            if ./scripts/verify_public_payload.sh /tmp/payload >/dev/null 2>&1; then
+              echo "::error::Payload allowed forbidden file: $bad"
+              exit 1
+            fi
+            rm -f "/tmp/payload/$bad"
+          done

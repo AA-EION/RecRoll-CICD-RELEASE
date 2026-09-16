@@ -1,0 +1,16 @@
+/src/
+/RecRoll/
+/public-dist/
+/downloaded/
+/release-files/
+*.log
+build-exit.txt
+*.p12
+*.pfx
+*.pem
+*.cer
+*.key
+.DS_Store
+__pycache__/
+kuroko/
+Kuroko/
