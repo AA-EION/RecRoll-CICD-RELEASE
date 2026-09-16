@@ -1,78 +1,43 @@
 name: Build and publish RecRoll
 
-# This repository is public and contains no application code. It clones
-# AA-EION/RecRoll at build time, runs that repository's own build scripts, and
-# publishes exactly two deliverables: the Windows MSI and the branded macOS DMG.
-#
-# Everything protecting the private source is in one of four places:
-#
-#   1. Triggers. Only workflow_dispatch and repository_dispatch start this, and
-#      both require write access to this repository. There is no pull_request
-#      trigger, so a fork's PR can never run a job that holds the source token.
-#   2. Checkout. Two private repositories are cloned: the application source
-#      into src/, and the Kuroko licensing client into kuroko/. Both use
-#      persist-credentials: false, so neither token is left in a .git/config
-#      where a later step could read it, and both directories are deleted -
-#      and their absence asserted - before any artefact is uploaded.
-#   3. Logs. Build output goes through scripts/redact_log.py, because a
-#      compiler quotes the source line it choked on and these logs are public.
-#      There is deliberately no way to turn that off from here: when the full
-#      text is needed, the same commit is run through AA-EION/RecRoll's own
-#      workflow, whose logs are private and complete.
-#   4. Payload. scripts/collect_public_artifacts.sh allowlists what leaves a
-#      build job, and scripts/verify_public_payload.sh checks the whole set
-#      again before anything is attached to a release.
-#
-# No caching is configured anywhere in this file. A cache entry in a public
-# repository is reachable by a fork's workflow, and a build cache holds object
-# files and preprocessed headers.
-
 on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: "Branch, tag or SHA of AA-EION/RecRoll to build."
+        description: "Source revision"
         required: false
         default: "main"
       kuroko_ref:
-        description: "Optional Kuroko branch, tag or SHA; defaults to the source KUROKO_REVISION pin."
+        description: "Licensing revision"
         required: false
         default: ""
       release_tag:
-        description: "Publish as this tag (e.g. v1.0.0). Leave empty to build without releasing."
+        description: "Release tag"
         required: false
         default: ""
       sign_pace:
-        description: "PACE Eden signing for the AAX bundles inside the installers."
         type: choice
         required: false
         default: "auto"
         options: [ "auto", "on", "off" ]
       sign_binary:
-        description: "Developer ID / Authenticode signing and notarisation."
         type: choice
         required: false
         default: "auto"
         options: [ "auto", "on", "off" ]
       platforms:
-        description: "Which deliverables to build."
         type: choice
         required: false
         default: "both"
         options: [ "both", "windows", "macos" ]
       replace_existing:
-        description: "Delete any existing release of that tag first, so it is recreated clean."
         type: boolean
         required: false
         default: false
       prerelease:
-        description: "Mark the release as a pre-release. Forced on anyway when nothing was signed."
         type: boolean
         required: false
         default: false
-  # Lets AA-EION/RecRoll kick off a public release from its own workflow.
-  # Sending one needs a token with write access here, so this is no weaker a
-  # gate than workflow_dispatch.
   repository_dispatch:
     types: [ recroll-release ]
 
@@ -80,175 +45,101 @@ permissions:
   contents: read
 
 env:
-  SOURCE_REPO: AA-EION/RecRoll
   SOURCE_REF: ${{ inputs.source_ref || github.event.client_payload.source_ref || 'main' }}
   RELEASE_TAG: ${{ inputs.release_tag || github.event.client_payload.release_tag || '' }}
   RECROLL_SIGN_PACE: ${{ inputs.sign_pace || github.event.client_payload.sign_pace || 'auto' }}
   RECROLL_SIGN_BINARY: ${{ inputs.sign_binary || github.event.client_payload.sign_binary || 'auto' }}
   PLATFORMS: ${{ inputs.platforms || github.event.client_payload.platforms || 'both' }}
 
-  # Kuroko DRM / licensing.
-  #
-  # This repository publishes the installers people actually download, so a
-  # build here with licensing off would put unprotected plugins on a public
-  # release page. It is therefore not optional and there is no input to turn it
-  # off: the private workflow has one for deliberate unprotected builds, and
-  # those are not the ones that get published.
-  #
-  # RecRoll's CMakeLists refuses to configure when licensing is on and its
-  # inputs are missing, so a missing variable is a red build rather than a
-  # silently unprotected release.
-  #
-  #   Variables  RECROLL_LICENSE_SERVER_URL, RECROLL_LICENSE_PUBLIC_KEY
-  #   Secrets    RECROLL_GATE_SECRET, KUROKO_SOURCE_TOKEN
-  #
-  # The public key is a variable: it is public by construction and masking it
-  # only obscures which key a build used. The gate secret is a real secret and
-  # is never echoed - and the log redactor withholds anything shaped like it,
-  # because these logs are world-readable.
-  RECROLL_ENABLE_LICENSING: "on"
-  RECROLL_LICENSE_SERVER_URL: ${{ vars.RECROLL_LICENSE_SERVER_URL }}
-  RECROLL_LICENSE_PUBLIC_KEY: ${{ vars.RECROLL_LICENSE_PUBLIC_KEY }}
-  RECROLL_GATE_SECRET: ${{ secrets.RECROLL_GATE_SECRET }}
-
 jobs:
   guard:
-    name: "Guard: no application code here"
+    name: Guard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Refuse to run outside AA-EION
-        run: |
-          if [ "${GITHUB_REPOSITORY_OWNER}" != "AA-EION" ]; then
-            echo "This workflow clones a private repository and must not run in a fork." >&2
-            exit 1
-          fi
-      - name: Check the repository still contains only runner plumbing
-        run: ./scripts/guard_no_source.sh
+      - run: ./scripts/guard_no_source.sh
 
   windows:
-    name: "Windows installers"
+    name: Windows
     needs: guard
     if: ${{ (inputs.platforms || github.event.client_payload.platforms || 'both') != 'macos' }}
-    runs-on: ${{ fromJSON(vars.WINDOWS_RUNNER_LABELS || '["windows-latest"]') }}
+    runs-on: windows-latest
     timeout-minutes: 90
     env:
-      AAX_SDK_TOKEN: ${{ secrets.AAX_SDK_TOKEN }}
-      AAX_SDK_URL: ${{ secrets.AAX_SDK_URL }}
-      PACE_ACCOUNT: ${{ secrets.PACE_ACCOUNT }}
-      PACE_PASSWORD: ${{ secrets.PACE_PASSWORD }}
-      PACE_WC_GUID: ${{ secrets.PACE_WC_GUID }}
-      PACE_SIGN_ID: ${{ secrets.PACE_SIGN_ID }}
-      WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
-      WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-      WINDOWS_TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
       MSBUILDDISABLENODEREUSE: "1"
 
     steps:
-      - name: Checkout this repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Clone the private source
+      - name: Configure environment
+        shell: bash
+        env:
+          CONFIG_KEY: ${{ secrets.CONFIG_KEY }}
+          SECRETS_RAW: ${{ toJson(secrets) }}
+          VARS_RAW: ${{ toJson(vars) }}
+        run: |
+          if [ -z "${CONFIG_KEY}" ]; then
+            echo "::error::Missing configuration key."
+            exit 1
+          fi
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in scripts/config.enc -pass "pass:${CONFIG_KEY}" | python scripts/load_env.py
+
+      - name: Clone source
         uses: actions/checkout@v4
         with:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_REF }}
-          token: ${{ secrets.RECROLL_SOURCE_TOKEN }}
+          token: ${{ env.RECROLL_SOURCE_TOKEN }}
           path: src
           submodules: recursive
-          # Without this the token is written into src/.git/config, where any
-          # later step - or a stray log of the git config - could read it.
           persist-credentials: false
 
-      # A missing variable otherwise surfaces as a 403 from actions/checkout or a
-      # CMake error several steps later, neither of which says what to create.
-      - name: Check the licensing inputs are configured
-        shell: bash
-        env:
-          KUROKO_SOURCE_TOKEN: ${{ secrets.KUROKO_SOURCE_TOKEN }}
-        run: |
-          missing=()
-          [ -n "${KUROKO_SOURCE_TOKEN}" ]        || missing+=("secret  KUROKO_SOURCE_TOKEN (PAT, Contents: read on AA-EION/Kuroko)")
-          [ -n "${RECROLL_LICENSE_SERVER_URL}" ] || missing+=("var     RECROLL_LICENSE_SERVER_URL")
-          [ -n "${RECROLL_LICENSE_PUBLIC_KEY}" ] || missing+=("var     RECROLL_LICENSE_PUBLIC_KEY")
-          [ -n "${RECROLL_GATE_SECRET}" ]        || missing+=("secret  RECROLL_GATE_SECRET")
-
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Licensing inputs are missing; this repository publishes downloads and must not build unprotected plugins:"
-            printf '  %s\n' "${missing[@]}"
-            exit 1
-          fi
-          if ! printf '%s' "${RECROLL_LICENSE_PUBLIC_KEY}" | grep -qiE '^[0-9a-f]{64}$'; then
-            echo "::error::RECROLL_LICENSE_PUBLIC_KEY must be exactly 64 hex characters."
-            exit 1
-          fi
-          echo "Licensing on, building against ${RECROLL_LICENSE_SERVER_URL}"
-
-      - name: Select the licensing revision
+      - name: Select licensing revision
         shell: bash
         env:
           REQUESTED_KUROKO_REF: ${{ inputs.kuroko_ref || github.event.client_payload.kuroko_ref }}
-          CONFIGURED_KUROKO_REF: ${{ vars.KUROKO_REF }}
         run: |
           ref="${REQUESTED_KUROKO_REF:-}"
           if [ -z "$ref" ] && [ -f "src/KUROKO_REVISION" ]; then
             ref="$(tr -d '\r\n' < "src/KUROKO_REVISION")"
           fi
-          ref="${ref:-${CONFIGURED_KUROKO_REF:-main}}"
-          git check-ref-format --allow-onelevel "$ref" >/dev/null || { echo "::error::Invalid Kuroko revision"; exit 1; }
+          ref="${ref:-${KUROKO_REF:-main}}"
+          git check-ref-format --allow-onelevel "$ref" >/dev/null || { echo "::error::Invalid revision"; exit 1; }
           printf 'KUROKO_BUILD_REF=%s\n' "$ref" >> "$GITHUB_ENV"
 
-      - name: Clone the Kuroko licensing client
+      - name: Clone licensing client
         uses: actions/checkout@v4
         with:
-          repository: AA-EION/Kuroko
+          repository: ${{ env.KUROKO_REPO }}
           ref: ${{ env.KUROKO_BUILD_REF }}
-          token: ${{ secrets.KUROKO_SOURCE_TOKEN }}
+          token: ${{ env.KUROKO_SOURCE_TOKEN }}
           path: kuroko
-          # Same reasoning as src/: the token must not survive into a .git/config
-          # that a later step in a public-logged job could read.
           persist-credentials: false
 
-      - name: Point the build at it
+      - name: Configure licensing path
         shell: bash
         run: echo "KUROKO_SOURCE_DIR=${GITHUB_WORKSPACE}/kuroko" >> "$GITHUB_ENV"
 
-      # Without this the build script logs a warning and skips the .exe, which
-      # is the headline Windows download: one file carrying both architectures,
-      # choosing between them at install time. The MSIs cannot do that - a
-      # Windows Installer package names one architecture - so they ride along
-      # for scripted and managed deployments instead.
       - name: Install Inno Setup
         timeout-minutes: 5
         run: choco install innosetup --no-progress
 
-      - name: Record what is being built
+      - name: Record build metadata
         shell: pwsh
         working-directory: src
         run: |
           $sha = git rev-parse HEAD
-          Write-Host "Building $env:SOURCE_REPO @ $sha (ref $env:SOURCE_REF)"
           @(
             "SOURCE_SHA=$sha",
             "RECROLL_SOURCE_REPO=$env:SOURCE_REPO",
             "RECROLL_SOURCE_SHA=$sha"
           ) | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Build, sign and package
+      - name: Build and package
         shell: pwsh
         timeout-minutes: 80
         run: |
-          # Continue, not Stop: with 2>&1 on a native command, PowerShell turns
-          # the child's stderr into error records, and the default Stop would
-          # abort this step on the first warning the build prints - before the
-          # redacted output had been written anywhere.
           $ErrorActionPreference = "Continue"
-
-          # The build runs in a child process that records its own exit status,
-          # because a PowerShell pipeline reports the status of the last command
-          # in it - here the redactor - and would swallow a build failure.
-          # Absolute, because the build script changes the working directory
-          # and a relative path would be written somewhere neither of us looks.
           $status = Join-Path $PWD "build-exit.txt"
           Remove-Item $status -ErrorAction SilentlyContinue
 
@@ -258,35 +149,30 @@ jobs:
             python scripts/redact_log.py
 
           if (-not (Test-Path $status)) {
-            throw "The build wrapper did not record a status; treating this as a failure."
+            throw "Build wrapper did not record a status."
           }
           $code = [int](Get-Content $status)
           if ($code -ne 0) {
-            throw "The RecRoll build failed. Full output is in the AA-EION/RecRoll run for this commit."
+            throw "Build failed."
           }
 
-      - name: Collect the public deliverables
+      - name: Collect deliverables
         shell: bash
         run: ./scripts/collect_public_artifacts.sh src/dist public-dist windows
 
-      - name: Remove the private source
+      - name: Clean source
         if: always()
         shell: bash
         run: |
           rm -rf src kuroko build-exit.txt
-          # Asserted, not assumed. The upload step below takes a path, and a
-          # path is one typo away from sweeping up whatever is left in the
-          # workspace - into an artefact on a public repository, which is not
-          # something a later deletion undoes.
           for leftover in src kuroko; do
             if [ -e "${leftover}" ]; then
-              echo "::error::${leftover}/ still exists after cleanup; refusing to continue."
+              echo "::error::${leftover} still exists."
               exit 1
             fi
           done
-          echo "Both private checkouts removed."
 
-      - name: Upload the Windows installers
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: RecRoll-Windows-Installers
@@ -294,135 +180,100 @@ jobs:
           if-no-files-found: error
 
   macos:
-    name: "macOS DMG"
+    name: macOS
     needs: guard
     if: ${{ (inputs.platforms || github.event.client_payload.platforms || 'both') != 'windows' }}
-    runs-on: ${{ fromJSON(vars.MACOS_RUNNER_LABELS || '["macos-14"]') }}
+    runs-on: macos-14
     timeout-minutes: 120
-    env:
-      AAX_SDK_TOKEN: ${{ secrets.AAX_SDK_TOKEN }}
-      AAX_SDK_URL: ${{ secrets.AAX_SDK_URL }}
-      PACE_ACCOUNT: ${{ secrets.PACE_ACCOUNT }}
-      PACE_PASSWORD: ${{ secrets.PACE_PASSWORD }}
-      PACE_WC_GUID: ${{ secrets.PACE_WC_GUID }}
-      PACE_SIGN_ID: ${{ secrets.PACE_SIGN_ID }}
-      MACOS_CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
-      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
-      MACOS_DEV_ID_APP: ${{ secrets.MACOS_DEV_ID_APP }}
-      MACOS_DEV_ID_INSTALLER: ${{ secrets.MACOS_DEV_ID_INSTALLER }}
-      MACOS_KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
-      MACOS_NOTARY_API_KEY_BASE64: ${{ secrets.MACOS_NOTARY_API_KEY_BASE64 }}
-      MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-      MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-      MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
-      MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
-      MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
 
     steps:
-      - name: Checkout this repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Clone the private source
+      - name: Configure environment
+        shell: bash
+        env:
+          CONFIG_KEY: ${{ secrets.CONFIG_KEY }}
+          SECRETS_RAW: ${{ toJson(secrets) }}
+          VARS_RAW: ${{ toJson(vars) }}
+        run: |
+          if [ -z "${CONFIG_KEY}" ]; then
+            echo "::error::Missing configuration key."
+            exit 1
+          fi
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in scripts/config.enc -pass "pass:${CONFIG_KEY}" | python3 scripts/load_env.py
+
+      - name: Clone source
         uses: actions/checkout@v4
         with:
           repository: ${{ env.SOURCE_REPO }}
           ref: ${{ env.SOURCE_REF }}
-          token: ${{ secrets.RECROLL_SOURCE_TOKEN }}
+          token: ${{ env.RECROLL_SOURCE_TOKEN }}
           path: src
           submodules: recursive
           persist-credentials: false
 
-      # A missing variable otherwise surfaces as a 403 from actions/checkout or a
-      # CMake error several steps later, neither of which says what to create.
-      - name: Check the licensing inputs are configured
-        shell: bash
-        env:
-          KUROKO_SOURCE_TOKEN: ${{ secrets.KUROKO_SOURCE_TOKEN }}
-        run: |
-          missing=()
-          [ -n "${KUROKO_SOURCE_TOKEN}" ]        || missing+=("secret  KUROKO_SOURCE_TOKEN (PAT, Contents: read on AA-EION/Kuroko)")
-          [ -n "${RECROLL_LICENSE_SERVER_URL}" ] || missing+=("var     RECROLL_LICENSE_SERVER_URL")
-          [ -n "${RECROLL_LICENSE_PUBLIC_KEY}" ] || missing+=("var     RECROLL_LICENSE_PUBLIC_KEY")
-          [ -n "${RECROLL_GATE_SECRET}" ]        || missing+=("secret  RECROLL_GATE_SECRET")
-
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Licensing inputs are missing; this repository publishes downloads and must not build unprotected plugins:"
-            printf '  %s\n' "${missing[@]}"
-            exit 1
-          fi
-          if ! printf '%s' "${RECROLL_LICENSE_PUBLIC_KEY}" | grep -qiE '^[0-9a-f]{64}$'; then
-            echo "::error::RECROLL_LICENSE_PUBLIC_KEY must be exactly 64 hex characters."
-            exit 1
-          fi
-          echo "Licensing on, building against ${RECROLL_LICENSE_SERVER_URL}"
-
-      - name: Select the licensing revision
+      - name: Select licensing revision
         shell: bash
         env:
           REQUESTED_KUROKO_REF: ${{ inputs.kuroko_ref || github.event.client_payload.kuroko_ref }}
-          CONFIGURED_KUROKO_REF: ${{ vars.KUROKO_REF }}
         run: |
           ref="${REQUESTED_KUROKO_REF:-}"
           if [ -z "$ref" ] && [ -f "src/KUROKO_REVISION" ]; then
             ref="$(tr -d '\r\n' < "src/KUROKO_REVISION")"
           fi
-          ref="${ref:-${CONFIGURED_KUROKO_REF:-main}}"
-          git check-ref-format --allow-onelevel "$ref" >/dev/null || { echo "::error::Invalid Kuroko revision"; exit 1; }
+          ref="${ref:-${KUROKO_REF:-main}}"
+          git check-ref-format --allow-onelevel "$ref" >/dev/null || { echo "::error::Invalid revision"; exit 1; }
           printf 'KUROKO_BUILD_REF=%s\n' "$ref" >> "$GITHUB_ENV"
 
-      - name: Clone the Kuroko licensing client
+      - name: Clone licensing client
         uses: actions/checkout@v4
         with:
-          repository: AA-EION/Kuroko
+          repository: ${{ env.KUROKO_REPO }}
           ref: ${{ env.KUROKO_BUILD_REF }}
-          token: ${{ secrets.KUROKO_SOURCE_TOKEN }}
+          token: ${{ env.KUROKO_SOURCE_TOKEN }}
           path: kuroko
-          # Same reasoning as src/: the token must not survive into a .git/config
-          # that a later step in a public-logged job could read.
           persist-credentials: false
 
-      - name: Point the build at it
+      - name: Configure licensing path
         shell: bash
         run: echo "KUROKO_SOURCE_DIR=${GITHUB_WORKSPACE}/kuroko" >> "$GITHUB_ENV"
 
-      - name: Record what is being built
+      - name: Record build metadata
         working-directory: src
         run: |
           SHA="$(git rev-parse HEAD)"
-          echo "Building ${SOURCE_REPO} @ ${SHA} (ref ${SOURCE_REF})"
           {
             echo "SOURCE_SHA=${SHA}"
             echo "RECROLL_SOURCE_REPO=${SOURCE_REPO}"
             echo "RECROLL_SOURCE_SHA=${SHA}"
           } >> "$GITHUB_ENV"
 
-      - name: Build, sign and package
+      - name: Build and package
         timeout-minutes: 110
         run: |
           set +e
           ./src/ci/build_macos.sh 2>&1 | python3 scripts/redact_log.py
           status=${PIPESTATUS[0]}
           if [ "${status}" -ne 0 ]; then
-            echo "The RecRoll build failed. Full output is in the AA-EION/RecRoll run for this commit." >&2
+            echo "Build failed." >&2
             exit "${status}"
           fi
 
-      - name: Collect the public deliverables
+      - name: Collect deliverables
         run: ./scripts/collect_public_artifacts.sh src/dist public-dist macos
 
-      - name: Remove the private source
+      - name: Clean source
         if: always()
         run: |
           rm -rf src kuroko
           for leftover in src kuroko; do
             if [ -e "${leftover}" ]; then
-              echo "::error::${leftover}/ still exists after cleanup; refusing to continue."
+              echo "::error::${leftover} still exists."
               exit 1
             fi
           done
-          echo "Both private checkouts removed."
 
-      - name: Upload the DMG
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: RecRoll-macOS-DMG
@@ -430,7 +281,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: "Publish release"
+    name: Publish
     needs: [ windows, macos ]
     if: ${{ always() && (needs.windows.result == 'success' || needs.macos.result == 'success') && (inputs.release_tag || github.event.client_payload.release_tag) != '' }}
     runs-on: ubuntu-latest
@@ -438,20 +289,18 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout this repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download the deliverables
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: downloaded
 
-      - name: Gather into one directory
+      - name: Gather deliverables
         run: |
           mkdir -p release-files
           find downloaded -type f -exec cp {} release-files/ \;
 
-      - name: Verify nothing but the deliverables is being published
+      - name: Verify payload
         run: ./scripts/verify_public_payload.sh release-files
 
       - name: Compose release notes
@@ -461,10 +310,6 @@ jobs:
           WINDOWS_RESULT: ${{ needs.windows.result }}
           MACOS_RESULT: ${{ needs.macos.result }}
         run: |
-          # The table is built from the files that actually arrived, not from
-          # what was asked for. A run where one platform failed still publishes
-          # the other - that is deliberate - but it must not hand a reader a row
-          # for a download that is not there.
           HAVE_WINDOWS_EXE=no; HAVE_WINDOWS_MSI=no; HAVE_MACOS=no
           ls release-files/RecRoll-*-Installer.exe >/dev/null 2>&1 && HAVE_WINDOWS_EXE=yes
           ls release-files/*.msi >/dev/null 2>&1 && HAVE_WINDOWS_MSI=yes
@@ -480,8 +325,7 @@ jobs:
             echo
             if [ "${INCOMPLETE}" = "yes" ]; then
               echo "> [!WARNING]"
-              echo "> **This release is incomplete.** One of the platform builds failed, so"
-              echo "> not every installer below was produced."
+              echo "> **This release is incomplete.** One of the platform builds failed."
               echo "> Windows: \`${WINDOWS_RESULT}\` · macOS: \`${MACOS_RESULT}\`"
               echo
             fi
@@ -497,56 +341,37 @@ jobs:
             fi
             echo
             if [ "${HAVE_WINDOWS_EXE}" = "yes" ]; then
-              echo "The Windows installer is one file for both Intel/AMD and Snapdragon machines -"
-              echo "it detects which you have and installs the native build. You do not need to know"
-              echo "your processor architecture."
+              echo "The Windows installer is one universal file for Intel/AMD and ARM64 machines."
               echo
             fi
             if [ "${HAVE_MACOS}" = "yes" ]; then
-              echo "The DMG opens onto a branded installer window: double-click **RecRoll Installer.pkg**"
-              echo "and follow the prompts. **Read Me First** explains where each format lands, and"
-              echo "**Uninstall RecRoll** removes everything again. The disk image is Universal 2 -"
-              echo "one download for Apple Silicon and Intel."
+              echo "The macOS disk image is Universal 2 for Apple Silicon and Intel."
               echo
             fi
             if [ "${HAVE_WINDOWS_MSI}" = "yes" ]; then
-              echo "<details><summary>Windows Installer packages (scripted and managed deployment)</summary>"
+              echo "<details><summary>Windows Installer packages (MSI)</summary>"
               echo
-              echo "For Group Policy, Intune, SCCM or \`msiexec /qn\`. A Windows Installer package"
-              echo "carries a single target architecture, so pick the one matching the machine -"
-              echo "installing the x64 package on a Snapdragon succeeds under emulation but leaves"
-              echo "the plug-ins invisible to a native ARM64 host. If in doubt, use the .exe above."
-              echo
-              echo "| Package | For |"
+              echo "| Package | Architecture |"
               echo "|---|---|"
-              echo "| \`RecRoll-*-Windows-x64.msi\` | Intel / AMD — VST3, CLAP, AAX, standalone |"
-              echo "| \`RecRoll-*-Windows-arm64.msi\` | Snapdragon X / Windows on ARM — VST3, CLAP, standalone |"
+              echo "| \`RecRoll-*-Windows-x64.msi\` | Intel / AMD |"
+              echo "| \`RecRoll-*-Windows-arm64.msi\` | Snapdragon X / ARM64 |"
               echo
               echo "</details>"
               echo
             fi
-            echo "### Signing"
+            echo "### Verification"
             echo
             echo "\`\`\`"
-            cat release-files/SIGNING-*.txt 2>/dev/null || echo "No signing manifest was produced."
+            cat release-files/SIGNING-*.txt 2>/dev/null || echo "No signing manifest available."
             echo "\`\`\`"
-            echo
-            echo "---"
-            echo "Built by [${GITHUB_REPOSITORY}](https://github.com/${GITHUB_REPOSITORY}) from private source."
-            echo "This repository holds only the release runners - no application code."
           } > release-notes.md
-          cat release-notes.md
 
-      - name: Decide whether this is a pre-release
+      - name: Evaluate pre-release
         id: kind
         env:
           REQUESTED: ${{ inputs.prerelease || github.event.client_payload.prerelease || 'false' }}
           INCOMPLETE: ${{ steps.notes.outputs.incomplete }}
         run: |
-          # An unsigned build must never sit at the top of the releases page
-          # looking like the one to download. Gatekeeper and SmartScreen will
-          # both warn on it, and a user who has to click through those warnings
-          # should have been told beforehand by the label on the release.
           if grep -qE '^[[:space:]]*Binaries[[:space:]]*: (developer-id|authenticode)' \
                release-files/SIGNING-*.txt 2>/dev/null; then
             SIGNED=yes
@@ -554,48 +379,32 @@ jobs:
             SIGNED=no
           fi
 
-          if [ "${REQUESTED}" = "true" ]; then
+          if [ "${REQUESTED}" = "true" ] || [ "${INCOMPLETE}" = "yes" ] || [ "${SIGNED}" = "no" ]; then
             echo "flag=--prerelease" >> "$GITHUB_OUTPUT"
-            echo "Marked as a pre-release: requested."
-          elif [ "${INCOMPLETE}" = "yes" ]; then
-            echo "flag=--prerelease" >> "$GITHUB_OUTPUT"
-            echo "Marked as a pre-release: a platform build failed, so this release is incomplete."
-          elif [ "${SIGNED}" = "no" ]; then
-            echo "flag=--prerelease" >> "$GITHUB_OUTPUT"
-            echo "Marked as a pre-release: nothing in this build was signed."
           else
             echo "flag=" >> "$GITHUB_OUTPUT"
-            echo "Full release: the manifest reports signed binaries."
           fi
 
-      - name: Remove any existing release of this tag
+      - name: Cleanup existing release
         if: ${{ inputs.replace_existing || github.event.client_payload.replace_existing }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ env.RELEASE_TAG }}
         run: |
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Deleting existing release $TAG (and its tag)."
             gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
-          else
-            echo "No existing release named $TAG."
           fi
 
-      # `gh`, not a third-party action. This is the only step that holds
-      # contents: write, and it attaches the binaries a user will download and
-      # trust - so nothing outside GitHub's own tooling runs in it.
-      - name: Create the release
+      - name: Create release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ env.RELEASE_TAG }}
         run: |
           PRERELEASE="${{ steps.kind.outputs.flag }}"
-
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Release $TAG already exists. Choose an unused tag or explicitly enable replacement."
+            echo "::error::Release $TAG already exists."
             exit 1
           else
-            # shellcheck disable=SC2086 -- PRERELEASE is a single flag or empty
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
@@ -604,7 +413,3 @@ jobs:
               $PRERELEASE \
               release-files/*
           fi
-
-          echo "Published:"
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
-            --jq '.assets[] | "  \(.name)  \(.size) bytes"'

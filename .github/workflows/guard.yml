@@ -1,10 +1,5 @@
 name: Guard
 
-# Runs on every change to this repository, including pull requests from forks.
-# It holds no secrets and clones nothing private, so it is safe to run for
-# anyone - and it is the check that keeps this repository what it claims to be:
-# release runners, and nothing else.
-
 on:
   push:
     branches: [ "**" ]
@@ -15,34 +10,31 @@ permissions:
   contents: read
 
 jobs:
-  no-application-code:
-    name: "No application code"
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check the tree
+      - name: Layout check
         run: ./scripts/guard_no_source.sh
 
-      - name: Check the scripts parse
+      - name: Syntax check
         run: |
           for script in scripts/*.sh; do
             bash -n "$script" || exit 1
           done
           python3 -m py_compile scripts/*.py
 
-      - name: Self-test the log redactor
+      - name: Redactor test
         run: |
-          # A compiler diagnostic quotes the source line it failed on. If the
-          # redactor ever stops stripping that, this repository starts leaking
-          # the private source into public logs one build failure at a time.
           cat > /tmp/sample.log <<'SAMPLE'
           [12/340] Building CXX object CMakeFiles/RecRoll.dir/Source/dsp/Ring.cpp.o
           /home/runner/work/src/Source/dsp/Ring.cpp:88:12: error: no member named 'kSecretTuning'
              88 |     const auto g = kSecretTuning * feedbackShape(x);
                 |                    ^~~~~~~~~~~~~
           C:\src\Source\dsp\Ring.cpp(88,12): error C2065: 'kSecretTuning': undeclared identifier [RecRoll.vcxproj]
-          Cloning https://x-access-token:ghp_AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH1234@github.com/AA-EION/AAX-SDK.git
+          Cloning https://x-access-token:ghp_AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHH1234@github.com/example-org/private-repo.git
           MACOS_CERT_P12_BASE64=MIIKvQIBAzCCCncGCSqGSIb3DQEHAaCCCmgEggpkMIIKYDCCBRcGCSqGSIb3DQEHBqCCBQgwggUEAgEAMIIE/QYJKoZIhvcNAQcBMBwGCiqGSIb3DQEMAQYwDgQI
           -----BEGIN PRIVATE KEY-----
           [sign] wraptool sign --account eion -p Hunter2Hunter2 --wcguid ABC
@@ -52,60 +44,40 @@ jobs:
           KUROKO_PRIVATE_KEY is set from the environment
           [sign] Using wraptool at /usr/local/bin/wraptool
           [sign] PACE Eden signed 2 AAX bundle(s).
-            Licensing      : on -> https://lic.eionstudios.com
+            Licensing      : on -> https://license.example.com
           SAMPLE
 
           python3 scripts/redact_log.py /tmp/sample.log > /tmp/redacted.log
           cat /tmp/redacted.log
 
-          # Private source must not survive...
           for forbidden in kSecretTuning feedbackShape "const auto g"; do
             if grep -q "$forbidden" /tmp/redacted.log; then
-              echo "::error::redact_log.py let source content through: $forbidden"
+              echo "::error::redactor allowed source: $forbidden"
               exit 1
             fi
           done
 
-          # ...and neither may anything credential-shaped. GitHub masks exact
-          # secret values on its own, but only as stored: a secret that has
-          # been decoded, re-encoded or split is no longer an exact match.
           for forbidden in ghp_AAAABBBB MIIKvQIBAzCCCnc "BEGIN PRIVATE KEY" Hunter2Hunter2 MyPfxPassword; do
             if grep -q "$forbidden" /tmp/redacted.log; then
-              echo "::error::redact_log.py let credential material through: $forbidden"
+              echo "::error::redactor allowed credential: $forbidden"
               exit 1
             fi
           done
 
-          # Licensing material. The gate secret is what a patcher would need to
-          # forge the license gate's keyed check field, and these logs are
-          # world-readable. Nothing prints it on purpose - this is for the tool
-          # that echoes its own command line when a configure step fails.
           for forbidden in 0xDEADBEEFu a99c068611a7d8df KUROKO_PRIVATE_KEY GATE_SECRET; do
             if grep -q "$forbidden" /tmp/redacted.log; then
-              echo "::error::redact_log.py let licensing material through: $forbidden"
+              echo "::error::redactor allowed secret material: $forbidden"
               exit 1
             fi
           done
 
-          # ...while the build's own licensing status line still has to survive.
-          # A release built against the wrong licensing server is worth catching
-          # by eye, and a redactor that hides the endpoint too makes that
-          # impossible without reading the private log.
-          grep -q "lic.eionstudios.com" /tmp/redacted.log \
-            || { echo "::error::redactor dropped the licensing status line"; exit 1; }
+          grep -q "license.example.com" /tmp/redacted.log || exit 1
+          grep -q "Ring.cpp" /tmp/redacted.log || exit 1
+          grep -q "88" /tmp/redacted.log || exit 1
+          grep -q "PACE Eden signed 2 AAX" /tmp/redacted.log || exit 1
 
-          # It still has to be useful: a redactor that hides everything is safe
-          # and useless, and gets switched off by the next person to need it.
-          grep -q "Ring.cpp" /tmp/redacted.log || { echo "::error::redactor dropped the file name"; exit 1; }
-          grep -q "88" /tmp/redacted.log || { echo "::error::redactor dropped the line number"; exit 1; }
-          grep -q "PACE Eden signed 2 AAX" /tmp/redacted.log || { echo "::error::redactor dropped a status line"; exit 1; }
-          echo "Redactor self-test passed."
-
-      - name: Check the payload gate accepts only the deliverables
+      - name: Payload check
         run: |
-          # Start clean: a leftover file from an earlier run would make the
-          # first assertion fail for a reason that has nothing to do with the
-          # allowlist.
           rm -rf /tmp/payload
           mkdir -p /tmp/payload
           for f in RecRoll-Windows-Universal-Installer.exe \
@@ -117,21 +89,14 @@ jobs:
           done
           ./scripts/verify_public_payload.sh /tmp/payload
 
-          # Everything else must be refused, one at a time so a single
-          # permissive pattern cannot hide behind another file's rejection.
-          #
-          # RecRoll.exe is the point of this list. The installer allowlist
-          # admits an .exe, and the build tree also contains the standalone
-          # application under that name - a bare \.exe$ would publish it.
           for bad in RecRoll.exe "RecRoll Instrument.exe" setup.exe unins000.exe \
                      RecRoll-Windows-x64-Portable.zip \
                      RecRoll-macOS-Universal-Installer.pkg \
                      signing-facts.txt RecRoll.pdb Main.cpp build.log; do
             touch "/tmp/payload/$bad"
             if ./scripts/verify_public_payload.sh /tmp/payload >/dev/null 2>&1; then
-              echo "::error::verify_public_payload.sh accepted a file it must refuse: $bad"
+              echo "::error::Payload allowed forbidden file: $bad"
               exit 1
             fi
             rm -f "/tmp/payload/$bad"
           done
-          echo "Payload gate passed: deliverables accepted, everything else refused."
