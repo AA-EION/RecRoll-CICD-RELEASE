@@ -31,13 +31,12 @@ The suite installs two plug-ins (and two standalone applications):
 
 👉 **[Download the latest release from GitHub Releases](../../releases/latest)**
 
-| Platform | Architecture | Installer Package | Description |
+| Platform | Architecture | Installer | Description |
 |---|---|---|---|
-| **Windows 10 / 11** | Universal (`x64` & `ARM64`) | `RecRoll-Windows-Universal-Installer.exe` | Universal setup installer for Intel/AMD (`x64`) and Snapdragon X (`ARM64`) |
-| **Windows 10 / 11 (MSI)** | `x64` / `ARM64` | `RecRoll-<version>-Windows-x64.msi`<br>`RecRoll-<version>-Windows-arm64.msi` | Enterprise & managed Windows Installer packages |
-| **macOS 11+** | Universal 2 (`arm64` + `x86_64`) | `RecRoll-macOS-Universal.dmg` | Signed & notarized disk image containing `RecRoll Installer.pkg` & Uninstaller |
+| **Windows 10 / 11** | Universal (`x64` & `ARM64`) | `RecRoll-Windows-Universal-Installer.exe` | Universal `.exe` installer for Intel/AMD (`x64`) and Snapdragon X (`ARM64`) |
+| **macOS 11+** | Universal 2 (`arm64` + `x86_64`) | `RecRoll-macOS-Universal.dmg` | Signed & notarized `.dmg` disk image containing `RecRoll Installer.pkg` & Uninstaller |
 
-Each release includes SHA-256 checksums and `SIGNING-windows.txt` / `SIGNING-macos.txt` verification manifests.
+Each release includes SHA-256 checksums for both installers in the release notes.
 
 ---
 
@@ -68,7 +67,6 @@ shasum -a 256 RecRoll-macOS-Universal.dmg
 ```powershell
 # Windows PowerShell
 Get-FileHash -Algorithm SHA256 .\RecRoll-Windows-Universal-Installer.exe
-Get-FileHash -Algorithm SHA256 .\RecRoll-*-Windows-*.msi
 ```
 
 ---

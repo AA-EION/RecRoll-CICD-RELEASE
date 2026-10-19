@@ -3,7 +3,7 @@ set -euo pipefail
 
 DIR="${1:?directory to verify}"
 
-ALLOWED='^RecRoll-.*-Installer\.exe$|\.(msi|dmg)$|^SIGNING-(windows|macos)\.txt$'
+ALLOWED='^RecRoll-.*-Installer\.exe$|\.dmg$'
 
 FAILED=0
 COUNT=0

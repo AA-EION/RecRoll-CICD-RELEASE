@@ -1,6 +1,6 @@
 # Plantilla de Release — RecRoll Suite (ES / EN)
 
-Usa esta plantilla al publicar manualmente una nueva versión en **[GitHub Releases](../../releases/new)** o mediante `gh release create`.
+Usa esta plantilla al publicar manualmente una nueva versión en **[GitHub Releases](../../releases/new)** o mediante `gh release create`. Solo se suben dos archivos por release: el instalador `.exe` de Windows y el `.dmg` de macOS.
 
 ---
 
@@ -18,29 +18,26 @@ Release pública <VERSION> de **RecRoll Suite** (**RecRoll** y **RecRoll Instrum
 - **Instalador DMG**: `RecRoll-macOS-Universal.dmg`
   - **SHA-256**: `<SHA256_MACOS_DMG>`
   - Compatible con macOS 11.0 (Big Sur) hasta macOS 26 (Tahoe+).
-  - Paquete Universal 2 nativo (`arm64` + `x86_64`).
-  - Totalmente firmado con Apple Developer ID, notarizado y grapado (stapled) por Apple.
+  - Paquete universal nativo (`arm64` + `x86_64`).
+  - Totalmente firmado con Apple Developer ID y notarizado por Apple.
 
 ### Windows (x64 / ARM64)
 
-- **Instalador Universal (.exe)**: `RecRoll-Windows-Universal-Installer.exe`
+- **Instalador Universal**: `RecRoll-Windows-Universal-Installer.exe`
   - **SHA-256**: `<SHA256_WINDOWS_EXE>`
-  - Instalador universal para Windows 10/11 (`x64` y `ARM64`).
-  - Incluye plugins VST3, CLAP, AAX (PACE Eden wrapped y firmado) y aplicaciones Standalone.
-- **Paquetes Windows Installer (.msi)**:
-  - `RecRoll-<VERSION>-Windows-x64.msi` — **SHA-256**: `<SHA256_WINDOWS_X64_MSI>`
-  - `RecRoll-<VERSION>-Windows-arm64.msi` — **SHA-256**: `<SHA256_WINDOWS_ARM64_MSI>`
+  - Instalador universal para Windows 10/11 (x64 y ARM64).
+  - Incluye plugins VST3, CLAP, AAX (PACE Eden wrapped y firmado) y aplicación Standalone.
 
 ---
 
 ## Formatos incluidos
 
-Incluye **RecRoll** (Efecto) y **RecRoll Instrument** (Sintetizador) en:
-- **VST3** (`RecRoll.vst3`, `RecRoll Instrument.vst3`)
-- **AU / Audio Unit (.component)** (`RecRoll.component`, `RecRoll Instrument.component` — macOS)
-- **CLAP** (`RecRoll.clap`, `RecRoll Instrument.clap`)
-- **AAX** (`RecRoll.aaxplugin`, `RecRoll Instrument.aaxplugin` — Avid Pro Tools, firmados y wrapped con PACE Eden)
-- **Aplicación Standalone** (`RecRoll`, `RecRoll Instrument`)
+Incluye **RecRoll** y **RecRoll Instrument** en:
+- **VST3**
+- **AU / Audio Unit (.component)** (macOS)
+- **CLAP**
+- **AAX** (Avid Pro Tools — firmado y wrapped con PACE Eden)
+- **Aplicación Standalone**
 
 ---
 
@@ -48,8 +45,6 @@ Incluye **RecRoll** (Efecto) y **RecRoll Instrument** (Sintetizador) en:
 
 - **macOS**: Todos los binarios y el instalador cuentan con firma oficial **Apple Developer ID** (`Juan Gallego - D7V3TP96W4`), **Hardened Runtime** y están **completamente notarizados y grapados (stapled)** por Apple. Los plugins AAX cuentan con la firma digital autorizada de **PACE Eden**. Instalación limpia y directa sin bloqueos de Gatekeeper.
 - **Windows**: Los bundles AAX llevan la firma digital de **PACE Eden** y cargan en Pro Tools. El resto de binarios no llevan un certificado Authenticode de confianza pública: Windows SmartScreen mostrará un aviso de editor desconocido al ejecutar el instalador. Es esperado en esta versión. Para continuar: *"Más información" → "Ejecutar de todas formas"*.
-
-Verifica la integridad de tus descargas con los hashes SHA-256 indicados arriba y con los manifiestos `SIGNING-macos.txt` y `SIGNING-windows.txt` adjuntos a la release.
 
 ---
 
@@ -84,33 +79,28 @@ Public release <VERSION> of **RecRoll Suite** (**RecRoll** and **RecRoll Instrum
 
 ### Windows (x64 / ARM64)
 
-- **Universal Installer (.exe)**: `RecRoll-Windows-Universal-Installer.exe`
+- **Universal Installer**: `RecRoll-Windows-Universal-Installer.exe`
   - **SHA-256**: `<SHA256_WINDOWS_EXE>`
-  - Universal installer for Windows 10/11 (`x64` and `ARM64`).
+  - Universal installer for Windows 10/11 (x64 and ARM64).
   - Includes VST3, CLAP, AAX (PACE Eden wrapped and signed), and Standalone applications.
-- **Windows Installer Packages (.msi)**:
-  - `RecRoll-<VERSION>-Windows-x64.msi` — **SHA-256**: `<SHA256_WINDOWS_X64_MSI>`
-  - `RecRoll-<VERSION>-Windows-arm64.msi` — **SHA-256**: `<SHA256_WINDOWS_ARM64_MSI>`
 
 ---
 
 ## Included Formats
 
-Includes both **RecRoll** (Effect) and **RecRoll Instrument** (Synthesizer) in:
-- **VST3** (`RecRoll.vst3`, `RecRoll Instrument.vst3`)
-- **AU / Audio Unit (.component)** (`RecRoll.component`, `RecRoll Instrument.component` — macOS)
-- **CLAP** (`RecRoll.clap`, `RecRoll Instrument.clap`)
-- **AAX** (`RecRoll.aaxplugin`, `RecRoll Instrument.aaxplugin` — Avid Pro Tools, PACE Eden wrapped & signed)
-- **Standalone Application** (`RecRoll`, `RecRoll Instrument`)
+Includes both **RecRoll** and **RecRoll Instrument** in:
+- **VST3**
+- **AU / Audio Unit (.component)** (macOS)
+- **CLAP**
+- **AAX** (Avid Pro Tools — PACE Eden wrapped & signed)
+- **Standalone Application**
 
 ---
 
 ## Code Signing & Notarization
 
-- **macOS**: All binaries, the installer package (`.pkg`), and the disk image (`.dmg`) are signed with **Apple Developer ID** (`Juan Gallego - D7V3TP96W4`) with **Hardened Runtime**, and are **notarized and stapled** by Apple. Both AAX bundles carry authorized **PACE Eden** digital signatures. Installs without Gatekeeper prompts.
+- **macOS**: All binaries and the installer are signed with **Apple Developer ID** (`Juan Gallego - D7V3TP96W4`) with **Hardened Runtime**, and are **notarized and stapled** by Apple. Both AAX bundles carry authorized **PACE Eden** digital signatures. Installs without Gatekeeper prompts.
 - **Windows**: Both AAX bundles carry **PACE Eden** digital signatures and load in Pro Tools. Other Windows binaries do not carry a public CA Authenticode certificate: Windows SmartScreen will display an unknown publisher prompt when launching the installer. Click *"More info" → "Run anyway"* to proceed.
-
-Verify your downloads against the SHA-256 checksums above and the attached `SIGNING-macos.txt` / `SIGNING-windows.txt` manifests.
 
 ---
 
