@@ -1,6 +1,10 @@
 # Plantilla de Release — RecRoll Suite (ES / EN)
 
-Usa esta plantilla al publicar manualmente una nueva versión en **[GitHub Releases](../../releases/new)** o mediante `gh release create`. Solo se suben dos archivos por release: el instalador `.exe` de Windows y el `.dmg` de macOS.
+Usa esta plantilla al publicar manualmente una nueva versión en **[GitHub Releases](../../releases/new)** o mediante `gh release create`. Se suben los instaladores (el instalador `.exe` de Windows y el `.dmg` de macOS) y `release-manifest.json`.
+
+> **Obligatorio / Required — `release-manifest.json`.** Cada release sube, junto a los instaladores, el `release-manifest.json` generado en el repositorio privado (`tools/make_release_manifest.py`). La tienda y el EION Studios Launcher solo leen ese archivo: una plataforma que no aparece en él se muestra como *no disponible*. Si se añade o reemplaza un instalador después, se regenera y se vuelve a subir en el mismo paso. Verifica antes de publicar: `./scripts/verify_public_payload.sh <carpeta>`.
+>
+> Every release uploads, beside the installers, the `release-manifest.json` generated in the private repository. The store and the Launcher read only that file; a platform it does not list is shown as *not available*. When an installer is added or replaced later, regenerate and re-upload it in the same step. See [AGENTS.md](../AGENTS.md#every-release-carries-release-manifestjson-required).
 
 ---
 

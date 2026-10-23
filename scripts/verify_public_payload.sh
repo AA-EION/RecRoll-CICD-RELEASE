@@ -2,8 +2,11 @@
 set -euo pipefail
 
 DIR="${1:?directory to verify}"
+# --adding: the folder holds only installers being added to a published
+# release, plus the regenerated release-manifest.json.
+ADDING="${2:-}"
 
-ALLOWED='^RecRoll-.*-Installer\.exe$|\.dmg$'
+ALLOWED='^RecRoll-.*-Installer\.exe$|\.dmg$|^release-manifest\.json$'
 
 FAILED=0
 COUNT=0
@@ -29,5 +32,14 @@ if [ "${FAILED}" -ne 0 ]; then
     echo "Refusing to publish unpermitted files." >&2
     exit 1
 fi
+
+# Every release carries release-manifest.json, and it must describe exactly
+# these installers: the store and the Launcher read only that file.
+if [ ! -f "${DIR}/release-manifest.json" ]; then
+    echo "release-manifest.json is missing. Generate it in the product repository:" >&2
+    echo "  python3 tools/make_release_manifest.py --dist <this folder>" >&2
+    exit 1
+fi
+python3 "$(dirname "${BASH_SOURCE[0]}")/verify_release_manifest.py" --dir "${DIR}" --product recroll ${ADDING:+--adding}
 
 echo "PASS: ${COUNT} file(s) verified."

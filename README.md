@@ -38,6 +38,8 @@ The suite installs two plug-ins (and two standalone applications):
 
 Each release includes SHA-256 checksums for both installers in the release notes.
 
+Every release also carries `release-manifest.json`, which the EION Studios plug-in store and Launcher read to know which platforms the release offers and to verify each installer's SHA-256. A platform missing from it is shown as not available.
+
 ---
 
 ## Supported Formats
