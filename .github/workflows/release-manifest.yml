@@ -48,7 +48,7 @@ jobs:
     # Only after a genuinely new release passed its manifest check. Never on an
     # edit, a prerelease or a manual dispatch, so nothing is deleted by accident.
     needs: check
-    if: github.event_name == 'release' && github.event.action == 'published'
+    if: github.event_name == 'release' && github.event.action == 'published' && !github.event.release.prerelease
     runs-on: ubuntu-latest
     permissions:
       contents: write
