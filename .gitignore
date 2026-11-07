@@ -1,0 +1,22 @@
+# Checkouts and build output never belong in this public repository.
+/src/
+/Boundless/
+/RecRoll/
+/FlyVerb/
+/Flyverb/
+/kuroko/
+/Kuroko/
+/public-dist/
+/downloaded/
+/release-files/
+*.log
+build-exit.txt
+# Keys and certificates
+*.p12
+*.pfx
+*.pem
+*.cer
+*.key
+*.enc
+.DS_Store
+__pycache__/
