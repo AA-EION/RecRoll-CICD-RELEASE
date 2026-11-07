@@ -7,6 +7,14 @@ name: Release manifest
 # and fails loudly when the manifest is missing or out of date. It reads this
 # repository's own release through the GitHub API and calls nothing else.
 #
+# When a NEW release is published and its manifest check passes, the prune job
+# then deletes every older release and every tag except the one just published,
+# so only the current release is ever downloadable. This keeps the public repo
+# to a single live release and stops stale installers (and old history reachable
+# through old tags) from lingering. Pruning runs only on a real "published"
+# event, never on edit/prerelease or a manual check, and only after the check
+# passes, so a malformed new release never takes the good one down with it.
+#
 # This is the only workflow in this repository. It is identical in
 # Boundless-, RecRoll- and FlyVerb-CICD-RELEASE; the product comes from
 # scripts/product.env.
@@ -35,3 +43,44 @@ jobs:
         run: |
           source scripts/product.env
           python3 scripts/verify_release_manifest.py --github "$TAG" --product "$PRODUCT_ID"
+
+  prune:
+    # Only after a genuinely new release passed its manifest check. Never on an
+    # edit, a prerelease or a manual dispatch, so nothing is deleted by accident.
+    needs: check
+    if: github.event_name == 'release' && github.event.action == 'published'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      KEEP: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Delete older releases and stray tags, keeping only the new one
+        run: |
+          set -euo pipefail
+          if [ -z "${KEEP}" ]; then
+            echo "No published tag to keep; refusing to prune." >&2
+            exit 1
+          fi
+          echo "Keeping release/tag: ${KEEP}"
+
+          # 1. Delete every OTHER release, together with its tag.
+          gh release list --repo "${REPO}" --limit 1000 --json tagName \
+              --jq '.[].tagName' | while IFS= read -r tag; do
+            [ -z "${tag}" ] && continue
+            if [ "${tag}" = "${KEEP}" ]; then continue; fi
+            echo "Deleting old release ${tag} (and its tag)"
+            gh release delete "${tag}" --repo "${REPO}" --cleanup-tag --yes
+          done
+
+          # 2. Mop up any tag that has no release attached, except the one we
+          #    keep. Listed through the API so this job needs no checkout.
+          gh api --paginate "repos/${REPO}/git/refs/tags" \
+              --jq '.[].ref | sub("^refs/tags/"; "")' 2>/dev/null | while IFS= read -r tag; do
+            [ -z "${tag}" ] && continue
+            if [ "${tag}" = "${KEEP}" ]; then continue; fi
+            echo "Deleting stray tag ${tag}"
+            gh api -X DELETE "repos/${REPO}/git/refs/tags/${tag}" || true
+          done
