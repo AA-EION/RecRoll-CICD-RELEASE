@@ -9,6 +9,7 @@
 # Installer names (the same in every EION Studios release repository):
 #   <Product>-<version>-Windows-<Universal|x64|arm64>-Installer.exe
 #   <Product>-<version>-macOS-Universal.dmg
+#   <Product>-<version>-Linux-x64.deb | .rpm | .tar.gz
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/product.env"
@@ -17,7 +18,7 @@ DIR="${1:?folder to verify}"
 ADDING="${2:-}"
 
 VER='[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?'
-ALLOWED="^${FILE_PREFIX}-${VER}-Windows-(Universal|x64|arm64)-Installer\.exe$|^${FILE_PREFIX}-${VER}-macOS-Universal\.dmg$|^release-manifest\.json$"
+ALLOWED="^${FILE_PREFIX}-${VER}-Windows-(Universal|x64|arm64)-Installer\.exe$|^${FILE_PREFIX}-${VER}-macOS-Universal\.dmg$|^${FILE_PREFIX}-${VER}-Linux-x64\.(deb|rpm|tar\.gz)$|^release-manifest\.json$"
 
 FAILED=0
 COUNT=0
@@ -43,6 +44,7 @@ if [ "${FAILED}" -ne 0 ]; then
     echo "Refusing to publish unpermitted files. Installers must be named" >&2
     echo "  ${FILE_PREFIX}-<version>-Windows-<Universal|x64|arm64>-Installer.exe" >&2
     echo "  ${FILE_PREFIX}-<version>-macOS-Universal.dmg" >&2
+    echo "  ${FILE_PREFIX}-<version>-Linux-x64.deb / .rpm / .tar.gz" >&2
     exit 1
 fi
 

@@ -44,7 +44,8 @@ or not. That includes `.cpp`, `.h`, `.mm`, `CMakeLists.txt`, `.cmake`, `.iss`,
 ## Release model
 
 Releases are built, signed and notarized locally on dedicated Windows and
-macOS machines from the private product repository, then uploaded by hand.
+macOS machines (Linux: a hardened Linux build, `ci/package_linux.sh`) from the
+private product repository, then uploaded by hand.
 
 1. **Installer names** are the same in every product:
 
@@ -53,6 +54,9 @@ macOS machines from the private product repository, then uploaded by hand.
    | Windows, x64 + ARM64 | `<Product>-<version>-Windows-Universal-Installer.exe` |
    | Windows, x64 only | `<Product>-<version>-Windows-x64-Installer.exe` |
    | macOS, Universal 2 | `<Product>-<version>-macOS-Universal.dmg` |
+   | Linux x86-64, Debian / Ubuntu | `<Product>-<version>-Linux-x64.deb` |
+   | Linux x86-64, Fedora / openSUSE / RHEL | `<Product>-<version>-Linux-x64.rpm` |
+   | Linux x86-64, any distribution | `<Product>-<version>-Linux-x64.tar.gz` |
 
    `<Product>` is `FILE_PREFIX` in `scripts/product.env`.
 

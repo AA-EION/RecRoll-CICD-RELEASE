@@ -6,7 +6,7 @@
 Never lose a take you did not know you were recording.
 
 [![Latest Release](https://img.shields.io/github/v/release/AA-EION/RecRoll-CICD-RELEASE?label=Latest%20Release&color=0f172a)](../../releases/latest)
-[![Platforms](https://img.shields.io/badge/Platforms-Windows%2010%2F11%20%7C%20macOS%2011%2B-16a34a)](#installers)
+[![Platforms](https://img.shields.io/badge/Platforms-Windows%2010%2F11%20%7C%20macOS%2011%2B%20%7C%20Linux-16a34a)](#installers)
 [![Formats](https://img.shields.io/badge/Formats-VST3%20%7C%20AU%20%7C%20CLAP%20%7C%20AAX%20%7C%20Standalone-ea580c)](#supported-formats)
 [![License](https://img.shields.io/badge/License-Proprietary-64748b)](https://eionstudios.com)
 
@@ -41,8 +41,13 @@ The suite installs two plug-ins (and two standalone applications):
 |---|---|---|---|
 | **Windows 10 / 11** | Universal (`x64` + `ARM64`) | `RecRoll-<version>-Windows-Universal-Installer.exe` | VST3, CLAP, AAX, Standalone |
 | **macOS 11+** | Universal 2 (`arm64` + `x86_64`) | `RecRoll-<version>-macOS-Universal.dmg` | `RecRoll Installer.pkg` (VST3, AU v2, CLAP, AAX, Standalone) and `Uninstall RecRoll.command` |
+| **Linux** (Ubuntu, Debian, Mint) | `x86_64` | `RecRoll-<version>-Linux-x64.deb` | VST3, CLAP, Standalone. Double-click to install with the Software app |
+| **Linux** (Fedora, openSUSE, RHEL) | `x86_64` | `RecRoll-<version>-Linux-x64.rpm` | VST3, CLAP, Standalone. Double-click to install |
+| **Linux** (any distribution) | `x86_64` | `RecRoll-<version>-Linux-x64.tar.gz` | VST3, CLAP, Standalone. Unpack and run `./install.sh` (no root needed) |
 
 AAX is x64 only.
+
+Linux builds run on any 64-bit distribution with glibc 2.28 or newer (Ubuntu 20.04, Debian 10, Fedora 29, RHEL 8 and later). The `.deb` and `.rpm` install for every user and are removed like any other package; `./install.sh --uninstall` removes a `.tar.gz` install.
 
 Every release also carries `release-manifest.json`, which lists each installer with its size and SHA-256. The plug-ins' update check, the EION Studios plug-in store and the Launcher read only that file.
 
@@ -52,13 +57,13 @@ Every release also carries `release-manifest.json`, which lists each installer w
 
 RecRoll Suite registers under the manufacturer **EION Studios** in your DAW plug-in browser.
 
-| Format | Windows | macOS |
-|---|---|---|
-| **VST3** | `C:\Program Files\Common Files\VST3\RecRoll*.vst3` | `/Library/Audio/Plug-Ins/VST3/RecRoll*.vst3` |
-| **AU v2** | — | `/Library/Audio/Plug-Ins/Components/RecRoll*.component` |
-| **CLAP** | `C:\Program Files\Common Files\CLAP\RecRoll*.clap` | `/Library/Audio/Plug-Ins/CLAP/RecRoll*.clap` |
-| **AAX** | `C:\Program Files\Common Files\Avid\Audio\Plug-Ins\RecRoll*.aaxplugin` | `/Library/Application Support/Avid/Audio/Plug-Ins/RecRoll*.aaxplugin` |
-| **Standalone** | `C:\Program Files\RecRoll\RecRoll*.exe` | `/Applications/RecRoll*.app` |
+| Format | Windows | macOS | Linux |
+|---|---|---|---|
+| **VST3** | `C:\Program Files\Common Files\VST3\RecRoll*.vst3` | `/Library/Audio/Plug-Ins/VST3/RecRoll*.vst3` | `/usr/lib/vst3/RecRoll*.vst3` (`~/.vst3` with `install.sh`) |
+| **AU v2** | — | `/Library/Audio/Plug-Ins/Components/RecRoll*.component` | — |
+| **CLAP** | `C:\Program Files\Common Files\CLAP\RecRoll*.clap` | `/Library/Audio/Plug-Ins/CLAP/RecRoll*.clap` | `/usr/lib/clap/RecRoll*.clap` (`~/.clap` with `install.sh`) |
+| **AAX** | `C:\Program Files\Common Files\Avid\Audio\Plug-Ins\RecRoll*.aaxplugin` | `/Library/Application Support/Avid/Audio/Plug-Ins/RecRoll*.aaxplugin` | — |
+| **Standalone** | `C:\Program Files\RecRoll\RecRoll*.exe` | `/Applications/RecRoll*.app` | applications menu, or `recroll` / `recroll-instrument` in a terminal |
 
 ---
 
@@ -72,12 +77,18 @@ When a new version is published here, RecRoll Suite tells you inside the plug-in
 
 - **macOS**: signed with an **Apple Developer ID** certificate (Hardened Runtime), notarized by Apple and stapled to both the `.pkg` and the `.dmg`. AAX bundles are wrapped and signed with **PACE Eden**. Installs without Gatekeeper warnings.
 - **Windows**: AAX bundles are wrapped and signed with **PACE Eden** for Avid Pro Tools. The other binaries carry no public Authenticode certificate, so Windows SmartScreen shows an unknown-publisher prompt: choose *More info → Run anyway*.
+- **Linux**: built with the same Kuroko hardening as the other platforms (obfuscation, full ELF mitigations). Linux has no central code-signing authority: check the SHA-256 below against `release-manifest.json`.
 
 Check a download against the SHA-256 in the release notes:
 
 ```bash
 # macOS
 shasum -a 256 RecRoll-*-macOS-Universal.dmg
+```
+
+```bash
+# Linux
+sha256sum RecRoll-*-Linux-x64.*
 ```
 
 ```powershell
