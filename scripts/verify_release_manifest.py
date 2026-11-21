@@ -37,11 +37,25 @@ PLATFORMS = {"windows", "macos", "linux"}
 ARCHES = {"universal", "x64", "arm64"}
 KINDS = {"inno", "msi", "dmg", "pkg", "appimage", "deb", "rpm", "tar"}
 INSTALLER = re.compile(r"\.(exe|msi|dmg|pkg|appimage|deb|rpm|tar\.gz|tar\.xz)$", re.IGNORECASE)
+# Attached beside the installers but not installers (a Flatpak bundle, AppImage zsync data): listed in the manifest's
+# "extras" with the same file/size/sha256 checks, never in "artifacts" (every Launcher parses artifact kinds strictly).
+EXTRA = re.compile(r"\.(flatpak|zsync)$", re.IGNORECASE)
+EXTRA_KINDS = {"flatpak", "zsync"}
 VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
+
+
+def listed_files(m: dict) -> dict:
+    """Every attached file the manifest describes: its artifacts and its extras."""
+    return {a.get("file"): a for a in (m.get("artifacts") or []) + (m.get("extras") or []) if isinstance(a, dict)}
 
 
 def schema_problems(m: dict, product: str | None, tag: str | None) -> list[str]:
     problems = []
+    for e in m.get("extras") or []:
+        if (not isinstance(e, dict) or e.get("kind") not in EXTRA_KINDS or not isinstance(e.get("size"), int)
+                or not re.fullmatch(r"[0-9a-f]{64}", str(e.get("sha256", "")))
+                or not re.fullmatch(r"[^/\\]+", str(e.get("file", "")))):
+            problems.append(f"extras: {e!r} needs kind ({', '.join(sorted(EXTRA_KINDS))}), file, size and sha256")
     if m.get("schemaVersion") != 2:
         problems.append(f"schemaVersion is {m.get('schemaVersion')!r}; it must be 2 (regenerate with tools/make_release_manifest.py)")
         return problems
@@ -101,7 +115,7 @@ def check_dir(directory: Path, product: str | None, tag: str | None, adding: boo
     except (OSError, json.JSONDecodeError) as e:
         return [f"{MANIFEST} is not valid JSON: {e}"]
     problems = schema_problems(m, product, tag)
-    listed = {a.get("file"): a for a in m.get("artifacts") or [] if isinstance(a, dict)}
+    listed = listed_files(m)
     for name, a in listed.items():
         f = directory / str(name)
         if not f.is_file():
@@ -112,7 +126,7 @@ def check_dir(directory: Path, product: str | None, tag: str | None, adding: boo
         elif sha256(f) != a.get("sha256"):
             problems.append(f"{name}: SHA-256 differs from the manifest")
     for f in sorted(directory.iterdir()):
-        if f.is_file() and INSTALLER.search(f.name) and f.name not in listed:
+        if f.is_file() and (INSTALLER.search(f.name) or EXTRA.search(f.name)) and f.name not in listed:
             problems.append(f"{f.name} is not in the manifest: regenerate it with this installer included")
     return problems
 
@@ -141,7 +155,7 @@ def check_github(repo: str, tag: str, product: str | None) -> list[str]:
     except (urllib.error.HTTPError, json.JSONDecodeError) as e:
         return [f"{MANIFEST} could not be read: {e}"]
     problems = schema_problems(m, product, tag)
-    listed = {a.get("file"): a for a in m.get("artifacts") or [] if isinstance(a, dict)}
+    listed = listed_files(m)
     for name, a in listed.items():
         asset = assets.get(name)
         if asset is None:
@@ -153,7 +167,7 @@ def check_github(repo: str, tag: str, product: str | None) -> list[str]:
         if digest.startswith("sha256:") and digest[7:] != a.get("sha256"):
             problems.append(f"{name}: GitHub's SHA-256 differs from the manifest")
     for name in assets:
-        if INSTALLER.search(name) and name not in listed:
+        if (INSTALLER.search(name) or EXTRA.search(name)) and name not in listed:
             problems.append(f"{name} is attached but not in the manifest: regenerate the manifest and upload it again")
     return problems
 
